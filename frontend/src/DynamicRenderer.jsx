@@ -1,4 +1,7 @@
-import React from "react";
+import React, {
+  useState,
+  useEffect
+} from "react";
 
 import {
   LiveProvider,
@@ -8,9 +11,9 @@ import {
 
 export default function DynamicRenderer({ code }) {
 
-  // =========================================
-  // CLEAN AI OUTPUT
-  // =========================================
+  // =====================================
+  // CLEAN AI CODE
+  // =====================================
 
   let cleanedCode = code
     .replace(/```jsx/g, "")
@@ -18,18 +21,18 @@ export default function DynamicRenderer({ code }) {
     .replace(/```/g, "")
     .trim();
 
-  // =========================================
+  // =====================================
   // REMOVE export default
-  // =========================================
+  // =====================================
 
   cleanedCode = cleanedCode.replace(
     /export\s+default\s+/,
     ""
   );
 
-  // =========================================
+  // =====================================
   // FIND COMPONENT NAME
-  // =========================================
+  // =====================================
 
   const match = cleanedCode.match(
     /function\s+([A-Za-z0-9_]+)/
@@ -39,9 +42,9 @@ export default function DynamicRenderer({ code }) {
     ? match[1]
     : "GeneratedComponent";
 
-  // =========================================
-  // ADD render()
-  // =========================================
+  // =====================================
+  // APPEND render()
+  // =====================================
 
   cleanedCode += `
 
@@ -58,15 +61,19 @@ render(<${componentName} />);
 
       </h2>
 
-      <div className="bg-white border rounded-xl p-6 shadow">
+      <div className="bg-white border rounded-xl p-6 shadow overflow-auto">
 
         <LiveProvider
           code={cleanedCode}
           noInline={true}
-          scope={{ React }}
+          scope={{
+            React,
+            useState,
+            useEffect
+          }}
         >
 
-          <LiveError className="text-red-500 mb-4" />
+          <LiveError className="text-red-500 mb-4 whitespace-pre-wrap" />
 
           <LivePreview />
 
