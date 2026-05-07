@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const API = axios.create({
-  baseURL: "https://YOUR_BACKEND.onrender.com"
+  baseURL: "https://aiui-generator.onrender.com"
 });
 
 export default API;
