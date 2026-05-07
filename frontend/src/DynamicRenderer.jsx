@@ -10,12 +10,13 @@ export default function DynamicRenderer({
   code
 }) {
 
-  // Clean markdown
+  // CLEAN AI OUTPUT
 
-  const cleanedCode = code
+  let cleanedCode = code
     .replace(/```jsx/g, "")
     .replace(/```javascript/g, "")
-    .replace(/```/g, "");
+    .replace(/```/g, "")
+    .replace(/class=/g, "className=");
 
   return (
 
@@ -36,7 +37,7 @@ export default function DynamicRenderer({
         >
 
           <LiveError
-            className="text-red-500 mb-4"
+            className="text-red-500 mb-4 whitespace-pre-wrap"
           />
 
           <LivePreview />
