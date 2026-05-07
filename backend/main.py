@@ -6,10 +6,6 @@ import os
 
 app = FastAPI()
 
-# =========================
-# CORS
-# =========================
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -18,207 +14,137 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# =========================
-# GROQ CLIENT
-# =========================
+client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
-client = Groq(
-    api_key=os.getenv("GROQ_API_KEY")
-)
+MODEL = "llama-3.1-8b-instant"
 
-PLANNER_MODEL = "llama-3.1-8b-instant"
-GENERATOR_MODEL = "llama-3.1-8b-instant"
-
-# =========================
-# REQUEST MODEL
-# =========================
 
 class PromptRequest(BaseModel):
     prompt: str
 
-# =========================
-# PLANNER PROMPT
-# =========================
 
-PLANNER_PROMPT = """
-You are an expert educational UI/UX planner and instructional designer.
+PLANNER_PROMPT = """You are an expert educational UI/UX planner.
 
-Your job is to analyze the user's request and produce a DETAILED, SPECIFIC instruction
-for a React engineer to build a highly interactive, visually rich educational UI component.
+Analyse the user request and write a DETAILED, SPECIFIC instruction for a React engineer
+to build one self-contained interactive educational UI component.
 
 Your instruction MUST include:
 
-1. TOPIC ANALYSIS - What exactly the user wants to learn/explore
-2. COMPONENT TYPE - What kind of UI best suits this (map with hover states, flashcards, 
-   calculator with live results, timeline, quiz, diagram, chart, table with filters, etc.)
-3. DATA - List ALL the actual real data to include (e.g., all 28 Indian states with capitals,
-   all elements in periodic table, actual chemical formulas, real historical dates, etc.)
-4. INTERACTIONS - Specific hover, click, filter, animate behaviors
-5. VISUAL DESIGN - Color scheme, layout, cards, icons using only inline styles + Tailwind
-6. SECTIONS - What distinct sections/panels the component should have
+1. COMPONENT TYPE - the best UI for the topic:
+   e.g. searchable card grid, interactive timeline, calculator with live output,
+   periodic table grid, chemical equation viewer, clickable map grid, quiz, etc.
 
-Be VERY specific with real data. If the topic is Indian states, list all states.
-If it's planets, list all planets with real facts. Always include real, accurate data.
+2. ALL REAL DATA - list every single data item to embed.
+   Examples:
+   - Indian states: all 36 states/UTs with capital, region, area, language, population
+   - Planets: all 8 with distance, diameter, moons, gravity, fun fact
+   - Elements: first 20 with symbol, atomic no., category, mass
+   Never use placeholders. The engineer hard-codes every item.
 
-Output ONLY the instruction text, no preamble.
-"""
+3. INTERACTIONS:
+   - Hover effect (background colour change)
+   - Click → detail panel showing ALL fields for that item
+   - Search/filter bar (mandatory when more than 8 items)
+   - At least one animated entrance (fade + slide up)
 
-# =========================
-# UI GENERATOR PROMPT
-# =========================
+4. VISUAL STYLE (Tailwind only, no external icon libs):
+   - White card backgrounds, rounded-2xl, shadow-md
+   - Selected item: bg-indigo-600 text-white
+   - Unselected hover: hover:bg-indigo-50
+   - Page background: bg-gradient-to-br from-slate-50 to-indigo-50
+   - Heading: text-2xl font-bold text-gray-800
 
-UI_GENERATOR_SYSTEM_PROMPT = """
-You are an expert React engineer who creates STUNNING, HIGHLY INTERACTIVE educational UI components.
+Output ONLY the instruction. No preamble."""
 
-You MUST follow these STRICT technical rules:
-- Return ONLY raw JSX code — NO markdown fences, NO ```jsx, NO explanations
-- NO import statements of any kind
-- NO export default
-- Use React.useState, React.useEffect, React.useRef, React.useMemo
-- Use className (NOT class)
-- Inline styles are allowed and encouraged for dynamic values
-- NO external libraries — pure React + inline styles + Tailwind classes only
-- Component name MUST be App
-- End with exactly: render(<App />);
 
-DESIGN RULES — make it look PREMIUM like a real product:
-- Use a soft light background: bg-gradient-to-br from-slate-50 to-blue-50
-- Cards with white background, rounded-2xl, shadow-lg, border border-gray-100
-- Hover effects using React.useState for hovered item tracking
-- Active/selected states with vivid color (blue-500, purple-500, etc.)
-- Smooth transitions: transition-all duration-200
-- Typography: font-bold for headings, text-gray-600 for secondary text
-- Use emoji icons naturally (🗺️ 🧪 🔬 📊 etc.) — no icon libraries needed
-- Grid layouts: grid grid-cols-2 gap-4 or grid grid-cols-3 gap-3
-- All data MUST be hardcoded as const arrays/objects inside the component
+GENERATOR_PROMPT = """You are an expert React engineer. Generate ONE complete, self-contained,
+interactive React component.
 
-INTERACTION RULES:
-- Every item must be clickable and show a detail panel or expand
-- Hover states must change background color
-- Selected states must show vivid highlight
-- If it's a map topic → render an SVG-based visual or rich grid of states with click-to-expand
-- If it's calculations → show live updating results
-- If it's chemistry → show molecules/equations visually
-- Always include a search/filter bar if there are more than 8 items
-- Include at least one animated element (pulse, bounce, fade-in)
+HARD RULES - breaking any of these causes a render error:
+1. Output RAW JSX ONLY - absolutely no markdown, no ``` fences, no explanations
+2. NO import or require statements of any kind
+3. NO export keyword
+4. Hooks MUST use React prefix: React.useState React.useEffect React.useRef React.useMemo
+5. Use className not class
+6. Tailwind utility classes for all styling
+7. Inline style={{}} only for truly dynamic values
+8. No external libraries
+9. Component name must be exactly: App
+10. Very last line must be exactly: render();
 
-The component must be COMPLETE and FULLY FUNCTIONAL with all real data embedded.
-It must look like a polished app, not a demo.
+DESIGN - make it look like a real product:
+- Outer div: className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50 p-6 font-sans"
+- Cards: className="bg-white rounded-2xl shadow-md border border-gray-100 p-4 cursor-pointer transition-all duration-200"
+- Selected card: style={{background:'#4338ca',color:'#fff'}}
+- Hovered card: track with React.useState(null) for hoveredId, apply bg-indigo-50
+- Detail panel: fixed right panel or bottom panel showing ALL fields
+- Search bar: 
+- Entrance animation: use React.useEffect to set a mounted state, then style={{opacity:mounted?1:0,transform:mounted?'none':'translateY(16px)',transition:'all 0.4s'}}
 
-End with:
-render(<App />);
-"""
+DATA RULES:
+- Hard-code ALL real data as const arrays inside App
+- Every item needs at least 5 fields for a rich detail panel
+- Never use lorem ipsum or placeholder data
 
-# =========================
-# ROOT
-# =========================
+The component must be 100% complete and functional with all data embedded.
+End with exactly: render();"""
+
 
 @app.get("/")
-def home():
-    return {"message": "Backend running"}
+def root():
+    return {"status": "ok", "message": "AI UI Generator backend running"}
 
-# =========================
-# GENERATE UI
-# =========================
 
 @app.post("/generate-ui")
-def generate_ui(data: PromptRequest):
-
-    print("===================================")
-    print("REQUEST RECEIVED")
-    print("Prompt:", data.prompt)
-    print("===================================")
+async def generate_ui(req: PromptRequest):
+    print(f"\n{'='*60}")
+    print(f"PROMPT: {req.prompt}")
+    print(f"{'='*60}")
 
     try:
-
-        # =========================
-        # PLANNER CALL
-        # =========================
-
-        print("Calling planner model...")
-
-        planner = client.chat.completions.create(
-            model=PLANNER_MODEL,
+        # Step 1: Planner
+        print("Running planner...")
+        plan_res = client.chat.completions.create(
+            model=MODEL,
             messages=[
-                {
-                    "role": "system",
-                    "content": PLANNER_PROMPT
-                },
+                {"role": "system", "content": PLANNER_PROMPT},
+                {"role": "user", "content": req.prompt},
+            ],
+            temperature=0.7,
+            max_tokens=800,
+        )
+        plan = plan_res.choices[0].message.content.strip()
+        print(f"PLAN ({len(plan)} chars):\n{plan[:300]}...\n")
+
+        # Step 2: Generator
+        print("Running generator...")
+        gen_res = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": GENERATOR_PROMPT},
                 {
                     "role": "user",
-                    "content": data.prompt
-                }
-            ],
-            temperature=0.6,
-            max_tokens=1200
-        )
-
-        planner_instruction = (
-            planner.choices[0]
-            .message
-            .content
-        )
-
-        print("PLANNER SUCCESS")
-        print("Instruction:", planner_instruction[:300])
-
-        # =========================
-        # UI GENERATOR CALL
-        # =========================
-
-        print("Calling UI generator...")
-
-        generator = client.chat.completions.create(
-            model=GENERATOR_MODEL,
-            messages=[
-                {
-                    "role": "system",
-                    "content": UI_GENERATOR_SYSTEM_PROMPT
+                    "content": (
+                        f"Build this component:\n\n{plan}\n\n"
+                        "CRITICAL REMINDERS:\n"
+                        "- Include every single data item listed above\n"
+                        "- Search bar filters in real time\n"
+                        "- Click any item to show a full detail panel\n"
+                        "- Hover changes background colour\n"
+                        "- Use React.useState / React.useEffect (never bare useState)\n"
+                        "- No imports, no export, raw JSX only\n"
+                        "- Last line: render();"
+                    ),
                 },
-                {
-                    "role": "user",
-                    "content": f"""
-Build a complete, stunning React component based on this plan:
-
-{planner_instruction}
-
-CRITICAL REQUIREMENTS:
-- Include ALL the real data mentioned
-- Make every single item interactive (hover + click)
-- Add a search/filter bar if there are many items
-- Show a detail/info panel when an item is clicked
-- Use beautiful card-based layouts
-- Add smooth hover color transitions
-- The component must be visually polished and complete
-- End with render(<App />);
-"""
-                }
             ],
-            temperature=0.5,
-            max_tokens=4000
+            temperature=0.4,
+            max_tokens=3000,
         )
+        code = gen_res.choices[0].message.content.strip()
+        print(f"CODE ({len(code)} chars)")
 
-        generated_code = (
-            generator.choices[0]
-            .message
-            .content
-        )
-
-        print("GENERATOR SUCCESS")
-        print("Code length:", len(generated_code))
-
-        return {
-            "planner_instruction": planner_instruction,
-            "generated_code": generated_code
-        }
+        return {"planner_instruction": plan, "generated_code": code}
 
     except Exception as e:
-
-        print("===================================")
-        print("BACKEND ERROR")
-        print(str(e))
-        print("===================================")
-
-        return {
-            "error": str(e)
-        }
+        print(f"ERROR: {e}")
+        return {"error": str(e)}
