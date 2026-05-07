@@ -211,6 +211,7 @@ causes a fatal render crash:
 7. No external libraries. Pure React + Tailwind only.
 8. Component name must be exactly:  App
 9. Your response must start with:   function App() {
+10. Do not end with render();
 10. Do not give syntax errors. Recheck if there are any syntax errors. - This is a must.
 
 ═══════════════════════════════════════════════
