@@ -10,13 +10,52 @@ export default function DynamicRenderer({
   code
 }) {
 
-  // CLEAN AI OUTPUT
+  // ===================================
+  // CLEAN AI GENERATED CODE
+  // ===================================
 
-  let cleanedCode = code
+  let cleanedCode = code;
+
+  // Remove markdown
+
+  cleanedCode = cleanedCode
     .replace(/```jsx/g, "")
     .replace(/```javascript/g, "")
-    .replace(/```/g, "")
+    .replace(/```/g, "");
+
+  // Remove imports
+
+  cleanedCode = cleanedCode
+    .replace(/import\s.*?from\s.*?;/g, "");
+
+  // Remove export default
+
+  cleanedCode = cleanedCode
+    .replace(/export default/g, "");
+
+  // Fix React hooks
+
+  cleanedCode = cleanedCode
+    .replace(/\buseState\(/g, "React.useState(");
+
+  cleanedCode = cleanedCode
+    .replace(/\buseEffect\(/g, "React.useEffect(");
+
+  // Fix class → className
+
+  cleanedCode = cleanedCode
     .replace(/class=/g, "className=");
+
+  // ===================================
+  // ENSURE render(<App />)
+  // ===================================
+
+  if (!cleanedCode.includes("render(")) {
+
+    cleanedCode += "\nrender(<App />);";
+  }
+
+  console.log(cleanedCode);
 
   return (
 
@@ -28,7 +67,7 @@ export default function DynamicRenderer({
 
       </h2>
 
-      <div className="bg-white p-6 rounded-xl shadow border">
+      <div className="bg-white border rounded-xl p-6 shadow">
 
         <LiveProvider
           code={cleanedCode}
@@ -37,7 +76,7 @@ export default function DynamicRenderer({
         >
 
           <LiveError
-            className="text-red-500 mb-4 whitespace-pre-wrap"
+            className="text-red-500 whitespace-pre-wrap mb-4"
           />
 
           <LivePreview />
