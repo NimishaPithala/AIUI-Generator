@@ -26,8 +26,8 @@ client = Groq(
     api_key=os.getenv("GROQ_API_KEY")
 )
 
-PLANNER_MODEL = "llama-3.3-70b-versatile"
-GENERATOR_MODEL = "llama-3.3-70b-versatile"
+PLANNER_MODEL = "llama-3.1-8b-instant"
+GENERATOR_MODEL = "llama-3.1-8b-instant"
 
 # =========================
 # REQUEST MODEL
