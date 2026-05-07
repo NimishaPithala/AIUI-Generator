@@ -164,7 +164,19 @@ export default function App() {
 
       console.error(error);
 
-      alert("Error generating UI");
+      console.error(error);
+
+if (error.response) {
+  alert(
+    JSON.stringify(
+      error.response.data,
+      null,
+      2
+    )
+  );
+} else {
+  alert(error.message);
+}
     }
 
     setLoading(false);
