@@ -1,3 +1,5 @@
+import React from "react";
+
 import {
   LiveProvider,
   LivePreview,
@@ -6,24 +8,63 @@ import {
 
 export default function DynamicRenderer({ code }) {
 
-  // Remove markdown if AI accidentally adds it
+  // =========================================
+  // CLEAN AI OUTPUT
+  // =========================================
 
-  const cleanedCode = code
+  let cleanedCode = code
     .replace(/```jsx/g, "")
     .replace(/```javascript/g, "")
-    .replace(/```/g, "");
+    .replace(/```/g, "")
+    .trim();
+
+  // =========================================
+  // REMOVE export default
+  // =========================================
+
+  cleanedCode = cleanedCode.replace(
+    /export\s+default\s+/,
+    ""
+  );
+
+  // =========================================
+  // FIND COMPONENT NAME
+  // =========================================
+
+  const match = cleanedCode.match(
+    /function\s+([A-Za-z0-9_]+)/
+  );
+
+  const componentName = match
+    ? match[1]
+    : "GeneratedComponent";
+
+  // =========================================
+  // ADD render()
+  // =========================================
+
+  cleanedCode += `
+
+render(<${componentName} />);
+`;
 
   return (
 
     <div className="mt-8">
 
       <h2 className="text-2xl font-bold mb-4">
+
         Live UI Preview
+
       </h2>
 
-      <div className="border rounded-xl p-6 bg-white shadow">
+      <div className="bg-white border rounded-xl p-6 shadow">
 
-        <LiveProvider code={cleanedCode} noInline>
+        <LiveProvider
+          code={cleanedCode}
+          noInline={true}
+          scope={{ React }}
+        >
 
           <LiveError className="text-red-500 mb-4" />
 
