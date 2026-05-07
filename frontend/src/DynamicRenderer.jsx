@@ -1,13 +1,11 @@
 import React from "react";
 import { LiveProvider, LivePreview, LiveError } from "react-live";
 
-// ─────────────────────────────────────────────
-// Tailwind CDN injector (runs once)
-// ─────────────────────────────────────────────
-let tailwindInjected = false;
-function ensureTailwind() {
-  if (tailwindInjected) return;
-  tailwindInjected = true;
+// Inject Tailwind CDN once into the page so generated className styling works
+let _twDone = false;
+function injectTailwind() {
+  if (_twDone) return;
+  _twDone = true;
   if (!document.querySelector('script[src*="tailwindcss"]')) {
     const s = document.createElement("script");
     s.src = "https://cdn.tailwindcss.com";
@@ -15,36 +13,38 @@ function ensureTailwind() {
   }
 }
 
-// ─────────────────────────────────────────────
-// Code cleaner
-// ─────────────────────────────────────────────
-function cleanCode(raw) {
-  let code = raw;
+// Clean AI-generated code so react-live can run it
+function clean(raw) {
+  let code = raw || "";
 
-  // Strip markdown fences
+  // Remove markdown fences
   code = code.replace(/^```[\w]*\n?/gm, "").replace(/^```\s*$/gm, "");
 
-  // Strip all import lines
-  code = code.replace(/^import\s+.*?;?\s*$/gm, "");
+  // Remove ALL import lines (handles multi-line imports too)
+  code = code.replace(/^import[\s\S]*?from\s+['"][^'"]+['"];?\s*\n/gm, "");
+  code = code.replace(/^import\s+['"][^'"]+['"];?\s*\n/gm, "");
 
-  // Strip export default
-  code = code.replace(/export\s+default\s+/g, "");
+  // Remove export
+  code = code.replace(/\bexport\s+default\s+/g, "");
+  code = code.replace(/\bexport\s+/g, "");
 
-  // Fix React hooks: useState( → React.useState(  (only bare calls)
-  code = code.replace(/(?<!\.)(?<!\w)(useState)\s*\(/g, "React.useState(");
-  code = code.replace(/(?<!\.)(?<!\w)(useEffect)\s*\(/g, "React.useEffect(");
-  code = code.replace(/(?<!\.)(?<!\w)(useRef)\s*\(/g, "React.useRef(");
-  code = code.replace(/(?<!\.)(?<!\w)(useMemo)\s*\(/g, "React.useMemo(");
-  code = code.replace(/(?<!\.)(?<!\w)(useCallback)\s*\(/g, "React.useCallback(");
-  code = code.replace(/(?<!\.)(?<!\w)(useReducer)\s*\(/g, "React.useReducer(");
+  // Fix bare hook calls → React.hookName
+  // Only replace when NOT already prefixed with "React."
+  const hooks = [
+    "useState","useEffect","useRef","useMemo",
+    "useCallback","useReducer","useContext","useLayoutEffect",
+  ];
+  hooks.forEach(h => {
+    // Negative lookbehind: not preceded by "React." or a word char
+    const re = new RegExp(`(?<!React\\.)(?<![a-zA-Z0-9_$])(${h})\\s*\\(`, "g");
+    code = code.replace(re, `React.${h}(`);
+  });
 
-  // Fix class= → className=
-  code = code.replace(/\bclass=/g, "className=");
+  // Fix class= → className=  (only in JSX attribute position)
+  code = code.replace(/(\s)class=/g, "$1className=");
+  code = code.replace(/^class=/gm, "className=");
 
-  // Fix for...of / for...in in JSX (common mistake that breaks react-live)
-  // Leave as-is, react-live supports these
-
-  // Ensure render(<App />) at end
+  // Ensure render() at the end
   const trimmed = code.trimEnd();
   if (!trimmed.includes("render(")) {
     code = trimmed + "\n\nrender(<App />);";
@@ -53,34 +53,20 @@ function cleanCode(raw) {
   return code.trim();
 }
 
-// ─────────────────────────────────────────────
-// Scope injected into react-live
-// ─────────────────────────────────────────────
-const LIVE_SCOPE = {
+// Extra globals the LLM-generated code commonly uses
+const SCOPE = {
   React,
-  // Common things LLMs might reference
+  Math, Date, JSON,
+  parseInt, parseFloat, isNaN, isFinite,
+  encodeURIComponent, decodeURIComponent,
+  Array, Object, String, Number, Boolean, Map, Set, RegExp,
+  setTimeout, clearTimeout, setInterval, clearInterval,
   console,
-  Math,
-  Date,
-  JSON,
-  parseInt,
-  parseFloat,
-  isNaN,
-  Array,
-  Object,
-  String,
-  Number,
-  Boolean,
-  Map,
-  Set,
 };
 
-// ─────────────────────────────────────────────
-// DynamicRenderer
-// ─────────────────────────────────────────────
 export default function DynamicRenderer({ code }) {
-  ensureTailwind();
-  const cleanedCode = cleanCode(code);
+  injectTailwind();
+  const cleaned = clean(code);
 
   return (
     <div
@@ -88,35 +74,26 @@ export default function DynamicRenderer({ code }) {
         borderRadius: "16px",
         overflow: "hidden",
         border: "1px solid rgba(255,255,255,0.1)",
-        boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
+        boxShadow: "0 20px 50px rgba(0,0,0,0.45)",
       }}
     >
-      <LiveProvider
-        code={cleanedCode}
-        noInline={true}
-        scope={LIVE_SCOPE}
-      >
-        {/* Error display */}
+      <LiveProvider code={cleaned} noInline={true} scope={SCOPE}>
+        {/* Error display — only visible when there's a JSX parse/runtime error */}
         <LiveError
           style={{
-            background: "rgba(239,68,68,0.15)",
-            borderBottom: "1px solid rgba(239,68,68,0.3)",
+            background: "rgba(239,68,68,0.18)",
+            borderBottom: "1px solid rgba(239,68,68,0.35)",
             color: "#fca5a5",
             padding: "0.75rem 1rem",
-            fontSize: "0.8rem",
+            fontSize: "0.78rem",
             fontFamily: "monospace",
             whiteSpace: "pre-wrap",
-            maxHeight: "160px",
+            maxHeight: "180px",
             overflowY: "auto",
           }}
         />
-        {/* Live preview */}
-        <div
-          style={{
-            background: "#f8fafc",
-            minHeight: "200px",
-          }}
-        >
+        {/* The rendered component lives here */}
+        <div style={{ background: "#f8fafc", minHeight: "220px" }}>
           <LivePreview />
         </div>
       </LiveProvider>
