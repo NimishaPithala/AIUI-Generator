@@ -61,7 +61,8 @@ IMPORTANT:
 ONLY RETURN THE INSTRUCTION.
 """
 
-UI_GENERATOR_SYSTEM_PROMPT = """
+"""
+UI_GENERATOR_SYSTEM_PROMPT = 
 You are an expert React UI engineer.
 
 Generate:
@@ -80,6 +81,28 @@ STRICT RULES:
 - Make component complete
 - Use inline sample data
 """
+
+UI_GENERATOR_SYSTEM_PROMPT = """
+You are an expert React engineer.
+
+Generate ONLY valid React JSX component code.
+
+STRICT RULES:
+- Return ONLY code
+- No markdown
+- No explanations
+- No ``` blocks
+- Use export default function
+- Use TailwindCSS
+- Use inline sample data
+- Must render properly in React Live
+- Do NOT import anything
+- Functional component only
+
+IMPORTANT:
+The component MUST directly return JSX.
+"""
+
 
 # ============================================
 # FASTAPI APP
