@@ -86,59 +86,48 @@ STRICT RULES:
 UI_GENERATOR_SYSTEM_PROMPT = """
 You are an elite React UI engineer.
 
-Your task:
-Generate a BEAUTIFUL and FULLY INTERACTIVE React component.
+Generate ONLY VALID React JSX code.
 
 STRICT RULES:
-- Return ONLY React JSX code
+- Return ONLY code
 - No markdown
 - No explanations
 - No imports
-- No external libraries
 - Single component only
-- Must work inside react-live
-- Use functional component
 - Use export default function
-- Use inline data only
+- Must work in react-live
+- Use TailwindCSS only
+- No external libraries
+- Keep code under 250 lines
+- Keep JSX concise
+- Avoid repetitive blocks
+- Use arrays + map()
+- Use simplified SVG or card-based layouts
 
-IMPORTANT UI REQUIREMENTS:
-- Use modern TailwindCSS styling
-- Use gradients
-- Use hover effects
-- Use transitions
-- Use shadows
-- Use rounded cards
-- Use responsive layouts
-- Use animations with Tailwind classes
-- Use flex/grid layouts
-- Use attractive colors
-- Make UI look professional
+INTERACTIVITY:
+- Hover effects
+- Click interactions
+- Animated transitions
+- Responsive design
 
-INTERACTIVITY REQUIREMENTS:
-- Clicking items should update detailed information
-- Add hover animations
-- Add active states
-- Add filtering/search if useful
-- Add interactive cards
-
-VERY IMPORTANT:
-DO NOT generate fake SVG rectangles.
+IMPORTANT:
+DO NOT generate massive repetitive JSX.
 
 Instead:
-- Create visually meaningful layouts
-- Use styled cards/buttons/grids
-- Simulate map interactions using positioned UI blocks
-- Focus on beautiful UX
+- Use arrays
+- Use .map()
+- Reuse components inline
+- Keep code compact
 
-MAP REQUIREMENTS:
-If user asks for a map:
-- Create a visually structured India map layout
-- Use clickable state blocks/cards
-- Arrange them approximately geographically
-- Add hover glow effects
-- Add selection animations
+MAP RULES:
+- Do NOT generate hundreds of positioned divs
+- Do NOT generate fake rectangles everywhere
+- Use a simplified SVG layout
+- Use grouped interactive regions
 
-The final component MUST look like a polished frontend application.
+VERY IMPORTANT:
+The final JSX MUST be syntactically complete.
+Never cut off code.
 """
 # ============================================
 # FASTAPI APP
