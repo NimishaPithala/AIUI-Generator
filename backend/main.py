@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from groq import Groq
 from dotenv import load_dotenv
 import os
-import React from 'react';
+
 
 # ============================================
 # LOAD ENV VARIABLES
