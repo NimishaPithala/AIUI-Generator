@@ -250,7 +250,7 @@ export default function DynamicRenderer({
 import React from "react";
 import { LiveProvider, LivePreview, LiveError } from "react-live";
 
-// Inject Tailwind once
+// ── Inject Tailwind CDN once so className works in generated components ──
 let _tw = false;
 function injectTailwind() {
   if (_tw) return;
@@ -262,106 +262,117 @@ function injectTailwind() {
   }
 }
 
+// ── FALLBACK code when raw is empty ──
+// IMPORTANT: No JSX angle-bracket tags inside this string.
+// Use React.createElement so Babel never sees raw JSX in a string.
+const FALLBACK_CODE = [
+  "function App() {",
+  "  return React.createElement(",
+  "    'div',",
+  "    { style: { padding: '2rem', color: '#6b7280', fontFamily: 'sans-serif' } },",
+  "    'Nothing generated yet.'",
+  "  );",
+  "}",
+  "render(React.createElement(App));",
+].join("\n");
+
+// ── Strip and sanitise LLM output so react-live can parse it ──
 function cleanCode(raw) {
-  if (!raw) return 'function App(){return <div>Nothing generated yet.</div>;}';
+  if (!raw || !raw.trim()) return FALLBACK_CODE;
 
   let code = raw;
 
-  // 1. Strip markdown fences  (``` with any language tag)
+  // 1. Strip ALL markdown fences  (```jsx, ```javascript, ```, etc.)
   code = code.replace(/^```[a-zA-Z]*\r?\n?/gm, "");
   code = code.replace(/^```\s*$/gm, "");
 
-  // 2. Strip import lines (handles multi-line destructured imports)
-  code = code.replace(/^import\s[\s\S]*?from\s+['"][^'"]+['"];?\s*$/gm, "");
+  // 2. Strip every import line
+  //    Handles:  import X from 'y';
+  //              import { X } from 'y';
+  //              import 'y';
+  code = code.replace(/^import[\s\S]*?from\s+['"][^'"]+['"];?\s*$/gm, "");
   code = code.replace(/^import\s+['"][^'"]+['"];?\s*$/gm, "");
 
-  // 3. Strip export
+  // 3. Strip export keywords
   code = code.replace(/\bexport\s+default\s+/g, "");
   code = code.replace(/\bexport\s+/g, "");
 
-  // 4. Fix bare hooks → React.hook
-  //    Regex: preceded by non-word/non-dot character (start, space, =, (, comma …)
+  // 4. Fix bare React hooks  (must NOT already be prefixed with "React.")
+  //    Pattern: the hook name is preceded by a non-word, non-dot character
   const hooks = [
-    "useState","useEffect","useRef","useMemo",
-    "useCallback","useReducer","useContext","useLayoutEffect",
+    "useState", "useEffect", "useRef", "useMemo",
+    "useCallback", "useReducer", "useContext", "useLayoutEffect",
   ];
-  hooks.forEach(h => {
-    // Replace only when not already preceded by "React."
+  hooks.forEach((hook) => {
+    // Negative lookbehind for word chars and dot — avoids double-prefixing
     const re = new RegExp(`(?
-    /^\s*(\/\/|function |const |let |var |class |return |render\(|<)/.test(l)
+    /^\s*(\/\/|\/\*|function |const |let |var |class |return |render\s*\(|<[A-Z])/.test(l)
   );
-  if (firstCodeLine > 0) code = lines.slice(firstCodeLine).join("\n");
+  if (firstCode > 0) {
+    code = lines.slice(firstCode).join("\n");
+  }
 
-  // 7. Ensure exactly ONE render() call at the very end
-  //    Strip any existing render() call first
-  code = code.replace(/\nrender\s*\(\s*<\s*App\s*\/?\s*>\s*\)\s*;?\s*$/g, "");
+  // 7. Guarantee exactly one render() call at the very end
+  //    Strip any existing render() call first so we don't duplicate
+  code = code.replace(/\nrender\s*\(\s*(?:React\.createElement\(App\)|<\s*App\s*\/?>)\s*\)\s*;?\s*$/g, "");
   code = code.trimEnd();
+
+  // Use React.createElement form — both work in react-live with noInline=true
+  // But raw JSX form is fine too because THIS string is built at runtime, not compile time
   code += "\n\nrender();";
 
   return code.trim();
 }
 
-// Full scope — every global the LLM might reference
+// ── Scope injected into every generated component ──
 const SCOPE = {
   React,
-  Math, Date, JSON,
-  parseInt, parseFloat, isNaN, isFinite,
-  encodeURIComponent, decodeURIComponent,
-  Array, Object, String, Number, Boolean, Map, Set, RegExp,
+  // Math & numbers
+  Math, Number, parseInt, parseFloat, isNaN, isFinite,
+  // Strings, collections
+  String, Array, Object, Boolean, Map, Set, RegExp, JSON,
+  // Timers
   setTimeout, clearTimeout, setInterval, clearInterval,
-  console,
+  // Misc
+  Date, console, encodeURIComponent, decodeURIComponent,
 };
 
-// Friendly error card shown below the preview when react-live reports an error
-function ErrorCard({ message }) {
-  return (
-    <div style={{
-      background:"#fff1f2", border:"1px solid #fecdd3",
-      borderRadius:"12px", padding:"1.25rem 1.5rem",
-      fontFamily:"monospace", fontSize:"13px",
-      color:"#9f1239", whiteSpace:"pre-wrap", wordBreak:"break-word",
-    }}>
-      <div style={{fontWeight:700,marginBottom:"0.5rem",
-                   fontFamily:"sans-serif",fontSize:"14px"}}>
-        ⚠️ JSX render error — model produced invalid syntax
-      </div>
-      <div style={{opacity:0.8,fontSize:"12px"}}>{message}</div>
-      <div style={{marginTop:"1rem",fontSize:"12px",
-                   fontFamily:"sans-serif",color:"#be123c"}}>
-        Try regenerating — occasionally the model outputs malformed code.
-        Check the browser console for the cleaned code that was sent to react-live.
-      </div>
-    </div>
-  );
-}
-
+// ── Main renderer component ──
 export default function DynamicRenderer({ code }) {
   injectTailwind();
   const cleaned = cleanCode(code);
 
-  // Always log in dev so you can inspect exactly what react-live receives
-  console.groupCollapsed("[DynamicRenderer] cleaned code sent to react-live");
+  // Always log so you can inspect what react-live receives
+  console.groupCollapsed("[DynamicRenderer] cleaned code");
   console.log(cleaned);
   console.groupEnd();
 
   return (
-    <div style={{
-      borderRadius:"16px", overflow:"hidden",
-      border:"1px solid rgba(255,255,255,0.12)",
-      boxShadow:"0 20px 50px rgba(0,0,0,0.4)",
-    }}>
+    <div
+      style={{
+        borderRadius: "16px",
+        overflow: "hidden",
+        border: "1px solid rgba(255,255,255,0.12)",
+        boxShadow: "0 20px 50px rgba(0,0,0,0.4)",
+      }}
+    >
       <LiveProvider code={cleaned} noInline={true} scope={SCOPE}>
-        {/* Show error above preview so both are visible */}
+        {/* Error banner — visible only when react-live catches a JSX/runtime error */}
         <LiveError
           style={{
-            background:"rgba(239,68,68,0.16)",
-            borderBottom:"1px solid rgba(239,68,68,0.3)",
-            color:"#fca5a5", padding:"0.75rem 1rem",
-            fontSize:"0.77rem", fontFamily:"monospace",
-            whiteSpace:"pre-wrap", maxHeight:"200px", overflowY:"auto",
+            background: "rgba(239,68,68,0.16)",
+            borderBottom: "1px solid rgba(239,68,68,0.3)",
+            color: "#fca5a5",
+            padding: "0.75rem 1rem",
+            fontSize: "0.77rem",
+            fontFamily: "monospace",
+            whiteSpace: "pre-wrap",
+            maxHeight: "200px",
+            overflowY: "auto",
           }}
         />
-        <div style={{background:"#f8fafc", minHeight:"260px"}}>
+        {/* The live rendered component */}
+        <div style={{ background: "#f8fafc", minHeight: "260px" }}>
           <LivePreview />
         </div>
       </LiveProvider>
