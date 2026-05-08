@@ -263,9 +263,7 @@ function injectTailwind() {
 }
 
 function cleanCode(raw) {
-  if (!raw) return 'function App(){return 
-Nothing generated yet.
-}\nrender();';
+  if (!raw) return 'function App(){return <div>Nothing generated yet.</div>;}';
 
   let code = raw;
 
