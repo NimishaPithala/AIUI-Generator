@@ -304,14 +304,12 @@ function cleanCode(raw) {
     "useCallback", "useReducer", "useContext", "useLayoutEffect",
   ];
   hooks.forEach((hook) => {
-    // Negative lookbehind for word chars and dot — avoids double-prefixing
-    const re = new RegExp(`(?
-    /^\s*(\/\/|\/\*|function |const |let |var |class |return |render\s*\(|<[A-Z])/.test(l)
-  );
-  if (firstCode > 0) {
-    code = lines.slice(firstCode).join("\n");
-  }
+  const re = new RegExp(`(^|[^\\w.])${hook}\\s*\\(`, "g");
 
+  code = code.replace(re, (match, prefix) => {
+    return `${prefix}React.${hook}(`;
+  });
+});
   // 7. Guarantee exactly one render() call at the very end
   //    Strip any existing render() call first so we don't duplicate
   code = code.replace(/\nrender\s*\(\s*(?:React\.createElement\(App\)|<\s*App\s*\/?>)\s*\)\s*;?\s*$/g, "");
