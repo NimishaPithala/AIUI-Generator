@@ -4,7 +4,7 @@ import axios from "axios";
 const API = axios.create({
   baseURL: "https://aiui-generator.onrender.com",
   headers: { "Content-Type": "application/json" },
-  timeout: 60000, // 60s — Groq can be slow on free tier
+  timeout: 120000, // 120 seconds — Groq + repair loop can take ~90s on a cold Render start
 });
 
 export default API;
