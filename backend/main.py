@@ -16,7 +16,6 @@ app.add_middleware(
 )
 
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-
 MODEL = "llama-3.1-8b-instant"
 
 
@@ -25,156 +24,6 @@ class PromptRequest(BaseModel):
 
 
 PLANNER_PROMPT = You are an expert educational UI/UX planner.
-
-Analyse the user request and write a DETAILED, SPECIFIC instruction for a React engineer
-to build one self-contained interactive educational UI component.
-
-Your instruction MUST include:
-
-1. COMPONENT TYPE - the best UI for the topic:
-   e.g. searchable card grid, interactive timeline, calculator with live output,
-   periodic table grid, chemical equation viewer, clickable map grid, quiz, etc.
-
-2. ALL REAL DATA - list every single data item to embed.
-   Examples:
-   - Indian states: all 36 states/UTs with capital, region, area, language, population
-   - Planets: all 8 with distance, diameter, moons, gravity, fun fact
-   - Elements: first 20 with symbol, atomic no., category, mass
-   Never use placeholders. The engineer hard-codes every item.
-
-3. INTERACTIONS:
-   - Hover effect (background colour change)
-   - Click → detail panel showing ALL fields for that item
-   - Search/filter bar (mandatory when more than 8 items)
-   - At least one animated entrance (fade + slide up)
-
-4. VISUAL STYLE (Tailwind only, no external icon libs):
-   - White card backgrounds, rounded-2xl, shadow-md
-   - Selected item: bg-indigo-600 text-white
-   - Unselected hover: hover:bg-indigo-50
-   - Page background: bg-gradient-to-br from-slate-50 to-indigo-50
-   - Heading: text-2xl font-bold text-gray-800
-
-Output ONLY the instruction. No preamble.
-
-
-GENERATOR_PROMPT = You are an expert React engineer. Generate ONE complete, self-contained,
-interactive React component.
-
-HARD RULES - breaking any of these causes a render error:
-1. Output RAW JSX ONLY - absolutely no markdown, no ``` fences, no explanations
-2. NO import or require statements of any kind
-3. NO export keyword
-4. Hooks MUST use React prefix: React.useState React.useEffect React.useRef React.useMemo
-5. Use className not class
-6. Tailwind utility classes for all styling
-7. Inline style={{}} only for truly dynamic values
-8. No external libraries
-9. Component name must be exactly: App
-10. Very last line must be exactly: render();
-
-DESIGN - make it look like a real product:
-- Outer div: className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50 p-6 font-sans"
-- Cards: className="bg-white rounded-2xl shadow-md border border-gray-100 p-4 cursor-pointer transition-all duration-200"
-- Selected card: style={{background:'#4338ca',color:'#fff'}}
-- Hovered card: track with React.useState(null) for hoveredId, apply bg-indigo-50
-- Detail panel: fixed right panel or bottom panel showing ALL fields
-- Search bar: 
-- Entrance animation: use React.useEffect to set a mounted state, then style={{opacity:mounted?1:0,transform:mounted?'none':'translateY(16px)',transition:'all 0.4s'}}
-
-DATA RULES:
-- Hard-code ALL real data as const arrays inside App
-- Every item needs at least 5 fields for a rich detail panel
-- Never use lorem ipsum or placeholder data
-
-The component must be 100% complete and functional with all data embedded.
-End with exactly: render();
-
-
-@app.get("/")
-def root():
-    return {"status": "ok", "message": "AI UI Generator backend running"}
-
-
-@app.post("/generate-ui")
-async def generate_ui(req: PromptRequest):
-    print(f"\n{'='*60}")
-    print(f"PROMPT: {req.prompt}")
-    print(f"{'='*60}")
-
-    try:
-        # Step 1: Planner
-        print("Running planner...")
-        plan_res = client.chat.completions.create(
-            model=MODEL,
-            messages=[
-                {"role": "system", "content": PLANNER_PROMPT},
-                {"role": "user", "content": req.prompt},
-            ],
-            temperature=0.7,
-            max_tokens=800,
-        )
-        plan = plan_res.choices[0].message.content.strip()
-        print(f"PLAN ({len(plan)} chars):\n{plan[:300]}...\n")
-
-        # Step 2: Generator
-        print("Running generator...")
-        gen_res = client.chat.completions.create(
-            model=MODEL,
-            messages=[
-                {"role": "system", "content": GENERATOR_PROMPT},
-                {
-                    "role": "user",
-                    "content": (
-                        f"Build this component:\n\n{plan}\n\n"
-                        "CRITICAL REMINDERS:\n"
-                        "- Include every single data item listed above\n"
-                        "- Search bar filters in real time\n"
-                        "- Click any item to show a full detail panel\n"
-                        "- Hover changes background colour\n"
-                        "- Use React.useState / React.useEffect (never bare useState)\n"
-                        "- No imports, no export, raw JSX only\n"
-                        "- Last line: render();"
-                    ),
-                },
-            ],
-            temperature=0.4,
-            max_tokens=3000,
-        )
-        code = gen_res.choices[0].message.content.strip()
-        print(f"CODE ({len(code)} chars)")
-
-        return {"planner_instruction": plan, "generated_code": code}
-
-    except Exception as e:
-        print(f"ERROR: {e}")
-        return {"error": str(e)}
-"""
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from groq import Groq
-import os
-
-app = FastAPI()
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-MODEL = "llama-3.1-8b-instant"
-
-
-class PromptRequest(BaseModel):
-    prompt: str
-
-
-PLANNER_PROMPT = """You are an expert educational UI/UX planner.
 
 Analyse the user request and write a DETAILED instruction for a React engineer
 to build one self-contained interactive educational UI component.
@@ -188,10 +37,10 @@ Include:
 4. VISUAL STYLE - Tailwind only. White cards, rounded-2xl, shadow-md.
    Selected: bg-indigo-600 text-white. Page: bg-gradient-to-br from-slate-50 to-indigo-50.
 
-Output ONLY the instruction. No preamble, no explanation."""
+Output ONLY the instruction. No preamble, no explanation.
 
 
-GENERATOR_PROMPT = """You are a React engineer. Output a SINGLE raw JSX component.
+GENERATOR_PROMPT = You are a React engineer. Output a SINGLE raw JSX component.
 
 ═══════════════════════════════════════════════
 ABSOLUTE OUTPUT RULES — violating any rule
@@ -258,7 +107,7 @@ DATA RULES:
 ════════════════════════════════════════════════
 START your response with:  function App() {
 END   your response with:  render();
-════════════════════════════════════════════════"""
+════════════════════════════════════════════════
 
 
 @app.get("/")
@@ -303,6 +152,233 @@ async def generate_ui(req: PromptRequest):
             ],
             temperature=0.3,
             max_tokens=3000,
+        )
+        code = gen_res.choices[0].message.content.strip()
+        print(f"CODE ({len(code)} chars)")
+
+        return {"planner_instruction": plan, "generated_code": code}
+
+    except Exception as e:
+        print(f"ERROR: {e}")
+        return {"error": str(e)}
+"""
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from groq import Groq
+import os
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+MODEL = "llama-3.1-8b-instant"
+
+
+class PromptRequest(BaseModel):
+    prompt: str
+
+
+# ─────────────────────────────────────────────────────────────
+# PLANNER  — decides component type and full data spec
+# ─────────────────────────────────────────────────────────────
+PLANNER_PROMPT = """You are an expert educational UI/UX planner.
+
+Analyse the user's request and write a precise instruction for a React/SVG engineer.
+
+COMPONENT TYPE — choose the best fit:
+  • CARD GRID      : lists, facts, comparison (planets, elements, countries …)
+  • SVG MAP        : any geographic map (India, world, US states …)
+  • SVG DIAGRAM    : body systems, cell, atom, machine parts, circuits …
+  • TIMELINE       : historical events, processes in order
+  • CALCULATOR     : math/science with live inputs and outputs
+  • QUIZ           : questions with answers and score
+  • CHART/GRAPH    : data visualisation with SVG bars/lines/pie
+
+SVG MAP rules (use when topic is a map):
+  - Specify viewBox dimensions, approximate SVG path data for every region,
+    each region gets a unique id, fill colour, hover colour, label.
+  - List every region with: id, name, capital, population, area, one fun fact.
+
+SVG DIAGRAM rules (use when topic is anatomy / system / mechanism):
+  - Describe each organ/part as a simple SVG shape (ellipse, rect, path, circle)
+    with x,y,width,height or cx,cy,r or a simple path d="".
+  - Label each part. Include a step-by-step process list the user can click
+    to highlight the relevant part.
+
+CARD GRID rules (use for everything else):
+  - List every data item with ALL fields. No placeholders.
+  - Include search bar (mandatory > 8 items).
+  - Hover + click-to-expand detail panel.
+
+Output ONLY the instruction. No preamble."""
+
+
+# ─────────────────────────────────────────────────────────────
+# GENERATOR  — strict rules that prevent every known JSX error
+# ─────────────────────────────────────────────────────────────
+GENERATOR_PROMPT = """You are a React + SVG engineer. Output ONE raw JSX component.
+
+══════════════════════════════════════════════════
+ABSOLUTE RULES — breaking any rule = render crash
+══════════════════════════════════════════════════
+1.  Output ONLY valid JS/JSX. Zero English prose,
+    zero markdown, zero ``` fences.
+2.  No import / require statements.
+3.  No export keyword.
+4.  ALL hooks MUST use React prefix:
+      React.useState   React.useEffect
+      React.useRef     React.useMemo
+    NEVER write bare:  useState(   useEffect(
+5.  className=  not  class=
+6.  No external libraries. React + inline SVG only.
+7.  Component name: App
+8.  First line of output: function App() {
+9.  Last line of output:  render();
+10. Every JSX expression inside {} must be valid JS.
+    No standalone statements inside JSX.
+11. Never use Array methods that return undefined inside JSX
+    (.forEach is banned inside JSX — use .map instead).
+12. Do NOT use position:absolute for detail panels —
+    use conditional rendering in a separate div below the grid.
+13. Define data arrays as const INSIDE App() before return().
+14. Do NOT initialise filter state as [] — initialise it as
+    the full data array: React.useState(dataArray) AFTER
+    defining dataArray, or filter inline inside return().
+
+══════════════════════════════════════════════════
+DESIGN
+══════════════════════════════════════════════════
+Page wrapper:
+  className="min-h-screen bg-gradient-to-br from-slate-50
+             to-indigo-50 p-6 font-sans"
+
+Cards:
+  className="bg-white rounded-2xl shadow-md border
+             border-gray-100 p-4 cursor-pointer
+             transition-all duration-200"
+
+Selected card: style={{background:'#4338ca',color:'#fff'}}
+Hovered card:  style={{background:'#eef2ff'}}
+
+Search input:
+  className="w-full border border-gray-200 rounded-xl
+             px-4 py-2 mb-4 text-gray-800 outline-none
+             focus:ring-2 focus:ring-indigo-300"
+
+Detail panel (separate div BELOW the grid, NOT inside card):
+  className="bg-white rounded-2xl shadow-xl border
+             border-indigo-100 p-6 mt-6"
+
+Entrance animation — add this pattern:
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => {
+    const t = setTimeout(() => setMounted(true), 50);
+    return () => clearTimeout(t);
+  }, []);
+  Outer div: style={{opacity:mounted?1:0,
+                     transform:mounted?'none':'translateY(16px)',
+                     transition:'all 0.4s ease'}}
+
+══════════════════════════════════════════════════
+SVG MAP pattern (use for any geographic map topic)
+══════════════════════════════════════════════════
+const regions = [
+  { id:'r1', name:'Region Name', path:'M...Z',
+    fill:'#a5b4fc', capital:'X', population:'Y', fact:'Z' },
+  ...
+];
+const [hovReg, setHovReg] = React.useState(null);
+const [selReg, setSelReg] = React.useState(null);
+
+
+
+
+══════════════════════════════════════════════════
+SVG DIAGRAM pattern (use for anatomy / systems)
+══════════════════════════════════════════════════
+const parts = [
+  { id:'p1', name:'Part Name', shape:'ellipse',
+    cx:200, cy:150, rx:60, ry:40,
+    fill:'#fda4af', desc:'What this part does' },
+  ...
+];
+const [hovPart, setHovPart] = React.useState(null);
+const [selPart, setSelPart] = React.useState(null);
+
+
+
+══════════════════════════════════════════════════
+FILTER PATTERN (no useState [] init bug)
+══════════════════════════════════════════════════
+// Define data first
+const items = [ ...all your data... ];
+// Filter inline — NO separate filteredItems state needed
+const [search, setSearch] = React.useState('');
+const visible = search
+  ? items.filter(i => i.name.toLowerCase().includes(search.toLowerCase()))
+  : items;
+// Then in JSX: visible.map(...)
+
+══════════════════════════════════════════════════
+START output with:  function App() {
+END   output with:  render();
+══════════════════════════════════════════════════"""
+
+
+@app.get("/")
+def root():
+    return {"status": "ok", "message": "Backend running"}
+
+
+@app.post("/generate-ui")
+async def generate_ui(req: PromptRequest):
+    print(f"\n{'='*60}\nPROMPT: {req.prompt}\n{'='*60}")
+
+    try:
+        # Step 1 — Planner
+        plan_res = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": PLANNER_PROMPT},
+                {"role": "user",   "content": req.prompt},
+            ],
+            temperature=0.7,
+            max_tokens=800,
+        )
+        plan = plan_res.choices[0].message.content.strip()
+        print(f"PLAN:\n{plan[:400]}\n")
+
+        # Step 2 — Generator
+        gen_res = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": GENERATOR_PROMPT},
+                {
+                    "role": "user",
+                    "content": (
+                        f"{plan}\n\n"
+                        "REMINDERS:\n"
+                        "- First line: function App() {\n"
+                        "- Last line:  render();\n"
+                        "- No imports, no export, no markdown fences.\n"
+                        "- Hooks: React.useState  React.useEffect  React.useRef\n"
+                        "- Filter inline (const visible = search ? items.filter(...) : items)\n"
+                        "- Detail panel goes BELOW the grid, not inside cards.\n"
+                        "- For maps: use inline SVG  with onMouseEnter/Leave/Click.\n"
+                        "- For diagrams: use inline SVG / with event handlers."
+                    ),
+                },
+            ],
+            temperature=0.3,
+            max_tokens=3500,
         )
         code = gen_res.choices[0].message.content.strip()
         print(f"CODE ({len(code)} chars)")
