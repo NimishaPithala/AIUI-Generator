@@ -250,7 +250,7 @@ export default function DynamicRenderer({
 import React from "react";
 import { LiveProvider, LivePreview, LiveError } from "react-live";
 
-// ── Inject Tailwind CDN once so className works in generated components ──
+// Inject Tailwind once so className works in generated components
 let _tw = false;
 function injectTailwind() {
   if (_tw) return;
@@ -262,10 +262,8 @@ function injectTailwind() {
   }
 }
 
-// ── FALLBACK code when raw is empty ──
-// IMPORTANT: No JSX angle-bracket tags inside this string.
-// Use React.createElement so Babel never sees raw JSX in a string.
-const FALLBACK_CODE = [
+// ── FALLBACK — NO JSX angle brackets in this string (Babel would choke) ──
+const FALLBACK = [
   "function App() {",
   "  return React.createElement(",
   "    'div',",
@@ -276,72 +274,61 @@ const FALLBACK_CODE = [
   "render(React.createElement(App));",
 ].join("\n");
 
-// ── Strip and sanitise LLM output so react-live can parse it ──
+// ── Frontend cleaner — last line of defence after Python pre_clean ──
 function cleanCode(raw) {
-  if (!raw || !raw.trim()) return FALLBACK_CODE;
+  if (!raw || !raw.trim()) return FALLBACK;
 
   let code = raw;
 
-  // 1. Strip ALL markdown fences  (```jsx, ```javascript, ```, etc.)
+  // Strip markdown fences
   code = code.replace(/^```[a-zA-Z]*\r?\n?/gm, "");
   code = code.replace(/^```\s*$/gm, "");
 
-  // 2. Strip every import line
-  //    Handles:  import X from 'y';
-  //              import { X } from 'y';
-  //              import 'y';
+  // Strip imports
   code = code.replace(/^import[\s\S]*?from\s+['"][^'"]+['"];?\s*$/gm, "");
   code = code.replace(/^import\s+['"][^'"]+['"];?\s*$/gm, "");
 
-  // 3. Strip export keywords
+  // Strip export
   code = code.replace(/\bexport\s+default\s+/g, "");
   code = code.replace(/\bexport\s+/g, "");
 
-  // 4. Fix bare React hooks  (must NOT already be prefixed with "React.")
-  //    Pattern: the hook name is preceded by a non-word, non-dot character
+  // Fix bare hooks
   const hooks = [
-    "useState", "useEffect", "useRef", "useMemo",
-    "useCallback", "useReducer", "useContext", "useLayoutEffect",
+    "useState","useEffect","useRef","useMemo",
+    "useCallback","useReducer","useContext","useLayoutEffect",
   ];
-  hooks.forEach((hook) => {
-  const re = new RegExp(`(^|[^\\w.])${hook}\\s*\\(`, "g");
+  hooks.forEach((h) => {
+    const re = new RegExp(`(?
+    /^\s*(\/\/|\/\*|function |const |let |var |render\s*\()/.test(l)
+  );
+  if (first > 0) code = lines.slice(first).join("\n");
 
-  code = code.replace(re, (match, prefix) => {
-    return `${prefix}React.${hook}(`;
-  });
-});
-  // 7. Guarantee exactly one render() call at the very end
-  //    Strip any existing render() call first so we don't duplicate
-  code = code.replace(/\nrender\s*\(\s*(?:React\.createElement\(App\)|<\s*App\s*\/?>)\s*\)\s*;?\s*$/g, "");
-  code = code.trimEnd();
-
-  // Use React.createElement form — both work in react-live with noInline=true
-  // But raw JSX form is fine too because THIS string is built at runtime, not compile time
-  code += "\n\nrender();";
+  // Ensure one render() at end
+  code = code.replace(
+    /\nrender\s*\(\s*(?:React\.createElement\(App\)|<\s*App\s*\/?>\s*)\)\s*;?\s*$/g,
+    ""
+  );
+  code = code.trimEnd() + "\n\nrender();";
 
   return code.trim();
 }
 
-// ── Scope injected into every generated component ──
+// Scope passed into every generated component
 const SCOPE = {
   React,
-  // Math & numbers
-  Math, Number, parseInt, parseFloat, isNaN, isFinite,
-  // Strings, collections
-  String, Array, Object, Boolean, Map, Set, RegExp, JSON,
-  // Timers
+  Math, Date, JSON,
+  parseInt, parseFloat, isNaN, isFinite,
+  encodeURIComponent, decodeURIComponent,
+  Array, Object, String, Number, Boolean, Map, Set, RegExp,
   setTimeout, clearTimeout, setInterval, clearInterval,
-  // Misc
-  Date, console, encodeURIComponent, decodeURIComponent,
+  console,
 };
 
-// ── Main renderer component ──
 export default function DynamicRenderer({ code }) {
   injectTailwind();
   const cleaned = cleanCode(code);
 
-  // Always log so you can inspect what react-live receives
-  console.groupCollapsed("[DynamicRenderer] cleaned code");
+  console.groupCollapsed("[DynamicRenderer] cleaned code → react-live");
   console.log(cleaned);
   console.groupEnd();
 
@@ -355,7 +342,6 @@ export default function DynamicRenderer({ code }) {
       }}
     >
       <LiveProvider code={cleaned} noInline={true} scope={SCOPE}>
-        {/* Error banner — visible only when react-live catches a JSX/runtime error */}
         <LiveError
           style={{
             background: "rgba(239,68,68,0.16)",
@@ -369,7 +355,6 @@ export default function DynamicRenderer({ code }) {
             overflowY: "auto",
           }}
         />
-        {/* The live rendered component */}
         <div style={{ background: "#f8fafc", minHeight: "260px" }}>
           <LivePreview />
         </div>
