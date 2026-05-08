@@ -250,31 +250,26 @@ export default function DynamicRenderer({
 import React from "react";
 import { LiveProvider, LivePreview, LiveError } from "react-live";
 
-// Inject Tailwind once so className works in generated components
-let _tw = false;
-function injectTailwind() {
-  if (_tw) return;
-  _tw = true;
-  if (!document.querySelector('script[src*="tailwindcss"]')) {
-    const s = document.createElement("script");
-    s.src = "https://cdn.tailwindcss.com";
-    document.head.appendChild(s);
-  }
-}
-
-// ── FALLBACK — NO JSX angle brackets in this string (Babel would choke) ──
+// ─────────────────────────────────────────────────────────────
+// FALLBACK — built with React.createElement so Babel never sees
+// raw JSX angle-brackets inside a string literal (which causes
+// "SyntaxError: Unexpected token" at compile time).
+// ─────────────────────────────────────────────────────────────
 const FALLBACK = [
   "function App() {",
   "  return React.createElement(",
   "    'div',",
-  "    { style: { padding: '2rem', color: '#6b7280', fontFamily: 'sans-serif' } },",
+  "    { style: { padding: '2rem', color: '#6b7280',",
+  "               fontFamily: 'sans-serif', fontSize: '1rem' } },",
   "    'Nothing generated yet.'",
   "  );",
   "}",
   "render(React.createElement(App));",
 ].join("\n");
 
-// ── Frontend cleaner — last line of defence after Python pre_clean ──
+// ─────────────────────────────────────────────────────────────
+// CLEANER — last safety net after Python pre_clean
+// ─────────────────────────────────────────────────────────────
 function cleanCode(raw) {
   if (!raw || !raw.trim()) return FALLBACK;
 
@@ -284,7 +279,7 @@ function cleanCode(raw) {
   code = code.replace(/^```[a-zA-Z]*\r?\n?/gm, "");
   code = code.replace(/^```\s*$/gm, "");
 
-  // Strip imports
+  // Strip import lines
   code = code.replace(/^import[\s\S]*?from\s+['"][^'"]+['"];?\s*$/gm, "");
   code = code.replace(/^import\s+['"][^'"]+['"];?\s*$/gm, "");
 
@@ -294,26 +289,39 @@ function cleanCode(raw) {
 
   // Fix bare hooks
   const hooks = [
-    "useState","useEffect","useRef","useMemo",
-    "useCallback","useReducer","useContext","useLayoutEffect",
+    "useState", "useEffect", "useRef", "useMemo",
+    "useCallback", "useReducer", "useContext", "useLayoutEffect",
   ];
   hooks.forEach((h) => {
-    const re = new RegExp(`(?
+    const re = new RegExp(`(?<![.\\w])${h}(?=\\s*\\()`, "g");
+    code = code.replace(re, `React.${h}`);
+  });
+
+  // Fix class= -> className=
+  code = code.replace(/(\s)class=/g, "$1className=");
+  code = code.replace(/^class=/gm, "className=");
+
+  // Remove ALL render() / ReactDOM.render() variants
+  code = code.replace(/ReactDOM\.render\s*\([\s\S]*?\)\s*;?/g, "");
+  code = code.replace(/\nrender\s*\(\s*\)\s*;?/g, "");
+  code = code.replace(/\nrender\s*\(<\s*App\s*\/?[^)]*\)\s*;?/g, "");
+
+  // Drop leading prose lines
+  const lines = code.split("\n");
+  const first = lines.findIndex((l) =>
     /^\s*(\/\/|\/\*|function |const |let |var |render\s*\()/.test(l)
   );
   if (first > 0) code = lines.slice(first).join("\n");
 
-  // Ensure one render() at end
-  code = code.replace(
-    /\nrender\s*\(\s*(?:React\.createElement\(App\)|<\s*App\s*\/?>\s*)\)\s*;?\s*$/g,
-    ""
-  );
-  code = code.trimEnd() + "\n\nrender();";
+  // Add exactly one render call at end
+  code = code.trimEnd() + "\n\nrender(<App />);";
 
   return code.trim();
 }
 
-// Scope passed into every generated component
+// ─────────────────────────────────────────────────────────────
+// SCOPE — every global the LLM-generated code might reference
+// ─────────────────────────────────────────────────────────────
 const SCOPE = {
   React,
   Math, Date, JSON,
@@ -324,10 +332,13 @@ const SCOPE = {
   console,
 };
 
+// ─────────────────────────────────────────────────────────────
+// RENDERER
+// ─────────────────────────────────────────────────────────────
 export default function DynamicRenderer({ code }) {
-  injectTailwind();
   const cleaned = cleanCode(code);
 
+  // Log in browser console so you can inspect exactly what react-live gets
   console.groupCollapsed("[DynamicRenderer] cleaned code → react-live");
   console.log(cleaned);
   console.groupEnd();
@@ -342,6 +353,7 @@ export default function DynamicRenderer({ code }) {
       }}
     >
       <LiveProvider code={cleaned} noInline={true} scope={SCOPE}>
+        {/* Error banner — only visible when react-live catches a problem */}
         <LiveError
           style={{
             background: "rgba(239,68,68,0.16)",
@@ -355,6 +367,7 @@ export default function DynamicRenderer({ code }) {
             overflowY: "auto",
           }}
         />
+        {/* The live rendered component */}
         <div style={{ background: "#f8fafc", minHeight: "260px" }}>
           <LivePreview />
         </div>
