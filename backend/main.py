@@ -16,7 +16,7 @@ app.add_middleware(
 )
 
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-MODEL = "llama-3.1-8b-instant"
+MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 MAX_REPAIR_ATTEMPTS = 3
 
 
