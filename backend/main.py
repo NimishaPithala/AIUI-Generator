@@ -375,7 +375,7 @@ async def generate_ui(req: PromptRequest):
                 {"role": "user",   "content": req.prompt},
             ],
             temperature=0.7,
-            max_tokens=800,
+            max_tokens= 4000,
         )
         plan = plan_res.choices[0].message.content.strip()
         print(f"PLAN ({len(plan)} chars):\n{plan[:300]}\n")
