@@ -467,7 +467,7 @@ async def generate_ui(req: PromptRequest):
 
     try:
         # ── Step 1: Planner ──────────────────────────────────
-        MODEL ="llama-3.3-70b-versatile"
+        MODEL = "qwen/qwen3-32b"
         plan_res = client.chat.completions.create(
             model=MODEL,
             messages=[
