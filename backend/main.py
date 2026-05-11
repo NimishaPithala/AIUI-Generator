@@ -16,7 +16,7 @@ app.add_middleware(
 )
 
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+MODEL = "llama-3.1-8b-instant"
 MAX_REPAIR_ATTEMPTS = 3
 
 
@@ -25,14 +25,15 @@ class PromptRequest(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────
-# PRE-CLEAN
+# STEP 1 — PRE-CLEAN
+# Strip everything the LLM wraps around the JSX
 # ─────────────────────────────────────────────────────────────
 def pre_clean(code: str) -> str:
-    # 1. Strip markdown fences
+    # Strip markdown fences
     code = re.sub(r"^```[a-zA-Z]*\r?\n?", "", code, flags=re.MULTILINE)
     code = re.sub(r"^```\s*$", "", code, flags=re.MULTILINE)
 
-    # 2. Strip import lines
+    # Strip import lines
     code = re.sub(
         r"^import\s[\s\S]*?from\s+['\"][^'\"]+['\"];?\s*$",
         "", code, flags=re.MULTILINE
@@ -42,11 +43,11 @@ def pre_clean(code: str) -> str:
         "", code, flags=re.MULTILINE
     )
 
-    # 3. Strip export
+    # Strip export keywords
     code = re.sub(r"\bexport\s+default\s+", "", code)
     code = re.sub(r"\bexport\s+", "", code)
 
-    # 4. Fix bare hooks -> React.hook
+    # Fix bare hooks → React.hook
     hooks = [
         "useState", "useEffect", "useRef", "useMemo",
         "useCallback", "useReducer", "useContext", "useLayoutEffect",
@@ -54,17 +55,16 @@ def pre_clean(code: str) -> str:
     for hook in hooks:
         code = re.sub(rf"(?<![.\w]){hook}(?=\s*\()", f"React.{hook}", code)
 
-    # 5. Fix class= -> className=
+    # Fix class= → className=
     code = re.sub(r"(\s)class=", r"\1className=", code)
     code = re.sub(r"^class=", "className=", code, flags=re.MULTILINE)
 
-    # 6. Remove ALL render() / ReactDOM.render() calls
-    #    LLM often outputs multiple render calls in different forms
+    # Remove ALL render() / ReactDOM.render() variants
     code = re.sub(r"ReactDOM\.render\s*\([\s\S]*?\)\s*;?", "", code)
     code = re.sub(r"\nrender\s*\(\s*\)\s*;?", "", code)
     code = re.sub(r"\nrender\s*\(<\s*App\s*/?\s*>[^)]*\)\s*;?", "", code)
 
-    # 7. Drop leading prose lines before first JS/JSX line
+    # Drop leading prose lines before first JS/JSX line
     lines = code.split("\n")
     first_code = next(
         (i for i, l in enumerate(lines)
@@ -73,16 +73,20 @@ def pre_clean(code: str) -> str:
     )
     code = "\n".join(lines[first_code:])
 
-    # 8. Add exactly ONE clean render call at end
+    # Add exactly ONE clean render call at end
     code = code.rstrip() + "\n\nrender(<App />);"
     return code.strip()
 
 
 # ─────────────────────────────────────────────────────────────
-# VALIDATE
+# STEP 2 — VALIDATE
+# Returns a list of human-readable error strings.
+# Empty list = code is safe to send to the frontend.
 # ─────────────────────────────────────────────────────────────
 def validate_code(code: str):
     errors = []
+
+    # ── Basic structure ─────────────────────────────────────
 
     if not re.search(r"function\s+App\s*\(", code):
         errors.append(
@@ -92,8 +96,12 @@ def validate_code(code: str):
 
     if not re.search(r"render\s*\(\s*<\s*App\s*/?\s*>\s*\)\s*;?\s*$", code.strip()):
         errors.append(
-            "MISSING: Last line must be exactly: render(<App />);"
+            "TRUNCATED OR MISSING: Last line must be exactly: render(<App />); "
+            "Your output was cut off. Regenerate the COMPLETE component "
+            "and end with render(<App />);"
         )
+
+    # ── Forbidden patterns ───────────────────────────────────
 
     if re.search(r"^import\s", code, re.MULTILINE):
         errors.append(
@@ -120,17 +128,9 @@ def validate_code(code: str):
 
     if re.search(r"\.forEach\s*\(", code):
         errors.append(
-            "FORBIDDEN: '.forEach()' inside JSX returns undefined. "
-            "Replace with '.map()'."
+            "FORBIDDEN: .forEach() returns undefined in JSX. "
+            "Replace with .map()"
         )
-
-    if code.count("`") % 2 != 0:
-        errors.append(
-            "SYNTAX: Odd number of backticks — unclosed template literal. Fix it."
-        )
-
-    if "```" in code:
-        errors.append("FORBIDDEN: ``` markdown fences in output. Remove them.")
 
     if re.search(r"ReactDOM\s*\.", code):
         errors.append(
@@ -138,38 +138,117 @@ def validate_code(code: str):
             "Do NOT use ReactDOM.render(). Last line must be: render(<App />);"
         )
 
-    if re.search(r"\{/\*[\s\S]*?\*/\}", code):
+    if re.search(r"=\s*\{/\*", code):
         errors.append(
-            "FORBIDDEN: JSX comment {/* ... */} used as a prop value. "
+            "FORBIDDEN: {/* comment */} used as a prop value. "
             "Replace every {/* ... */} prop with a real string value."
         )
+
+    # ── Syntax: balanced delimiters ─────────────────────────
+
+    if code.count("`") % 2 != 0:
+        errors.append(
+            "SYNTAX: Odd number of backticks — unclosed template literal. "
+            "Find and close it."
+        )
+
+    if "```" in code:
+        errors.append("FORBIDDEN: ``` markdown fences in output. Remove them.")
+
+    open_b  = code.count("{")
+    close_b = code.count("}")
+    if open_b != close_b:
+        errors.append(
+            f"SYNTAX: Unbalanced curly braces — "
+            f"{open_b} opening '{{' vs {close_b} closing '}}'. "
+            "Your output was truncated. Regenerate the COMPLETE component — "
+            "every opened {{ must have a matching }}."
+        )
+
+    open_p  = code.count("(")
+    close_p = code.count(")")
+    if open_p != close_p:
+        errors.append(
+            f"SYNTAX: Unbalanced parentheses — "
+            f"{open_p} '(' vs {close_p} ')'. "
+            "Your output was truncated. Close every opened expression."
+        )
+
+    # ── JSX tag balance ──────────────────────────────────────
+    # Check structural container tags only (not self-closing elements)
+    structural_tags = [
+        "div", "span", "p", "h1", "h2", "h3", "h4", "h5", "h6",
+        "ul", "ol", "li", "table", "tr", "td", "th", "thead", "tbody",
+        "svg", "g", "section", "article", "main", "header", "footer",
+        "nav", "aside", "form", "label", "select", "textarea",
+        "button", "a", "strong", "em", "small",
+    ]
+    tag_errors = []
+    for tag in structural_tags:
+        opens  = len(re.findall(rf"<{tag}(?:\s[^>]*)?>", code))
+        closes = len(re.findall(rf"</{tag}>", code))
+        self_c = len(re.findall(rf"<{tag}\s*/>", code))
+        opens -= self_c   # self-closing don't need a closing tag
+        if opens != closes:
+            tag_errors.append(f"<{tag}> opened {opens}x but closed {closes}x")
+    if tag_errors:
+        errors.append(
+            "UNCLOSED JSX TAGS — fix ALL of these: " +
+            "; ".join(tag_errors[:6]) +
+            ". Every opened tag MUST have a matching closing tag. "
+            "Output was likely truncated — regenerate the COMPLETE component."
+        )
+
+    # ── Placeholder detection ────────────────────────────────
+    placeholder_patterns = [
+        (r"x-coordinate",       "x-coordinate"),
+        (r"y-coordinate",       "y-coordinate"),
+        (r"path\s+data",        "path data"),
+        (r"insert\s+here",      "insert here"),
+        (r"\bTODO\b",           "TODO"),
+        (r"\bFIXME\b",          "FIXME"),
+        (r"your\s+text\s+here", "your text here"),
+    ]
+    for pattern, label in placeholder_patterns:
+        if re.search(pattern, code, re.IGNORECASE):
+            errors.append(
+                f"FORBIDDEN: Placeholder text '{label}' found in output. "
+                "Replace every placeholder with a real value."
+            )
 
     return errors
 
 
 # ─────────────────────────────────────────────────────────────
-# REPAIR PROMPT
+# REPAIR SYSTEM PROMPT
 # ─────────────────────────────────────────────────────────────
 REPAIR_SYSTEM = """You are a JSX syntax repair specialist.
 
-You receive broken React component code and a list of exact errors.
-Output the FULLY FIXED and COMPLETE code — nothing omitted.
+You receive a broken React component and a list of exact errors.
+Output the FULLY FIXED and COMPLETE component — nothing omitted or truncated.
 
 STRICT RULES:
 - Raw JSX only. Zero markdown. Zero ``` fences.
 - No import or require statements of any kind.
 - No export keyword anywhere.
-- ALL hooks MUST use React prefix: React.useState  React.useEffect  React.useRef
-- Use className= not class=
-- No .forEach() inside JSX — use .map()
+- ALL hooks: React.useState  React.useEffect  React.useRef  React.useMemo
+- className= not class=
+- No .forEach() in JSX — use .map()
 - No ReactDOM — last line must be exactly: render(<App />);
-- No JSX comments {/* */} as prop values — replace with real values or empty string ""
+- No {/* comment */} as prop values — replace with real values
 - Component name: App
 - First line: function App() {
 - Last line:  render(<App />);
 
+CRITICAL — every opened tag/brace/paren MUST be closed:
+- Every { must have a matching }
+- Every ( must have a matching )
+- Every <div> must have a </div>
+- Every <span> must have a </span>
+- The component MUST be COMPLETE — do not stop early.
+
 Fix ONLY what the error list says. Keep all data and logic identical.
-Output the complete fixed code and nothing else."""
+Output the complete fixed code and NOTHING else."""
 
 
 # ─────────────────────────────────────────────────────────────
@@ -179,7 +258,6 @@ PLANNER_PROMPT = """You are an expert educational UI/UX planner.
 
 Analyse the user request and write a precise instruction for a React/SVG engineer
 to build one self-contained interactive educational UI component.
-Give the prompt for Generator prompt to generate component according to the React-Live Library.
 
 COMPONENT TYPE — pick the best fit:
   CARD GRID   : facts, lists, comparisons (planets, elements, countries, states)
@@ -189,16 +267,17 @@ COMPONENT TYPE — pick the best fit:
   CALCULATOR  : math/science with live inputs and computed outputs
   QUIZ        : questions, answer choices, score tracking
 
-SVG MAP rules (use when topic involves a geographic map):
+SVG MAP rules (topic involves a geographic map):
   Specify viewBox dimensions.
   For each region provide: id, name, approximate SVG path d="M...Z",
   label position lx/ly, fill colour, capital, population, area, fun fact.
   Include ALL regions (all 28 states + 8 UTs for India).
+  Paths must be COMPLETE closed shapes ending with Z.
 
 SVG DIAGRAM rules (anatomy, body systems, mechanisms):
   Each part = one SVG shape (ellipse, rect, circle) with real coordinates.
   Include cx/cy/rx/ry for ellipse, x/y/w/h for rect.
-  Label every part. Include clickable numbered step list to highlight parts.
+  Label every part. Include clickable numbered step list.
 
 CARD GRID rules (default):
   List every data item with at least 5 real fields.
@@ -211,9 +290,11 @@ Output ONLY the instruction. No preamble."""
 # ─────────────────────────────────────────────────────────────
 # GENERATOR PROMPT
 # ─────────────────────────────────────────────────────────────
-GENERATOR_PROMPT = """You are a React + SVG engineer. Output ONE raw JSX component.
+GENERATOR_PROMPT = """You are a React + SVG engineer. Output ONE complete raw JSX component.
 
-ABSOLUTE RULES — break any = fatal render crash:
+╔══════════════════════════════════════════════════════════╗
+║  ABSOLUTE RULES — break any = fatal render crash         ║
+╚══════════════════════════════════════════════════════════╝
 
 1.  Output RAW JSX/JS ONLY.
     Zero English sentences. Zero markdown. Zero ``` fences.
@@ -223,8 +304,8 @@ ABSOLUTE RULES — break any = fatal render crash:
 3.  NO export keyword anywhere.
 
 4.  ALL React hooks MUST have the React. prefix:
-      React.useState    React.useEffect    React.useRef    React.useMemo
-    NEVER write bare:   useState(          useEffect(
+      React.useState  React.useEffect  React.useRef  React.useMemo
+    NEVER write bare:  useState(  useEffect(
 
 5.  Write className= never class=
 
@@ -245,7 +326,7 @@ ABSOLUTE RULES — break any = fatal render crash:
 
 12. Define ALL data arrays as const INSIDE App() BEFORE the return().
 
-13. FILTER PATTERN — never initialise a filtered state as []:
+13. FILTER PATTERN:
       const [search, setSearch] = React.useState('');
       const visible = search
         ? items.filter(i => i.name.toLowerCase().includes(search.toLowerCase()))
@@ -255,12 +336,22 @@ ABSOLUTE RULES — break any = fatal render crash:
 14. NEVER use JSX comments as prop values.
     WRONG:  <path d={/* path data */} />
     RIGHT:  <path d="M100,200 L300,400 Z" />
-    Every prop must have a REAL value — no placeholders, no comments.
 
-15. NEVER write placeholder comments inside data arrays.
-    Every field must be a real string or number.
+15. NEVER write placeholder text. Every field must be a real value.
 
-DESIGN:
+16. COMPLETE OUTPUT REQUIREMENT — this is critical:
+    Your output MUST be 100% complete.
+    Every {{ must have a matching }}.
+    Every ( must have a matching ).
+    Every <div> must have a </div>.
+    Every <span> must have a </span>.
+    Every SVG <path d="..."> must end with Z inside the quotes.
+    Do NOT stop generating mid-way. Write until render(<App />); is output.
+    If the component is long, keep going — do not truncate.
+
+╔══════════════════════════════════════════════════════════╗
+║  DESIGN                                                  ║
+╚══════════════════════════════════════════════════════════╝
   Page:     className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50 p-6 font-sans"
   Cards:    className="bg-white rounded-2xl shadow-md border border-gray-100 p-4 cursor-pointer transition-all duration-200"
   Selected: style={{background:'#4338ca',color:'#fff'}}
@@ -274,15 +365,17 @@ DESIGN:
       const t = setTimeout(() => setMounted(true), 50);
       return () => clearTimeout(t);
     }, []);
-    Outer div style: {{opacity:mounted?1:0, transform:mounted?'none':'translateY(16px)', transition:'all 0.4s ease'}}
+    Outer div: style={{opacity:mounted?1:0,transform:mounted?'none':'translateY(16px)',transition:'all 0.4s ease'}}
 
-SVG MAP PATTERN:
+╔══════════════════════════════════════════════════════════╗
+║  SVG MAP PATTERN                                         ║
+╚══════════════════════════════════════════════════════════╝
   const regions = [
     { id:'ap', name:'Andhra Pradesh', lx:420, ly:580,
       fill:'#a5b4fc',
       path:'M390,520 L450,510 L470,560 L440,610 L400,600 Z',
       capital:'Amaravati', population:'49M', area:'162975 km2',
-      fact:'Known for spicy cuisine and classical dance Kuchipudi' },
+      fact:'Known for spicy cuisine and classical dance' },
   ];
   const [hovReg, setHovReg] = React.useState(null);
   const [selReg, setSelReg] = React.useState(null);
@@ -307,11 +400,13 @@ SVG MAP PATTERN:
     ))}
   </svg>
 
-SVG DIAGRAM PATTERN:
+╔══════════════════════════════════════════════════════════╗
+║  SVG DIAGRAM PATTERN                                     ║
+╚══════════════════════════════════════════════════════════╝
   const parts = [
     { id:'stomach', name:'Stomach', shape:'ellipse',
       cx:250, cy:280, rx:70, ry:50,
-      fill:'#fda4af', desc:'Breaks down food using acid and enzymes.' },
+      fill:'#fda4af', desc:'Breaks down food using acid.' },
     { id:'liver', name:'Liver', shape:'rect',
       x:310, y:200, w:80, h:60,
       fill:'#fb923c', desc:'Produces bile and detoxifies blood.' },
@@ -350,10 +445,10 @@ SVG DIAGRAM PATTERN:
     ))}
   </svg>
 
-START output with: function App() {
-Do not give incomplete tags. Make sure all the tags are complete in the generated code.
-Generate the entire code to complete the tags. If required, minify the code.
-END   output with: render(<App />);"""
+╔══════════════════════════════════════════════════════════╗
+║  START:  function App() {                                ║
+║  END:    render(<App />);   ← REQUIRED FINAL LINE        ║
+╚══════════════════════════════════════════════════════════╝"""
 
 
 # ─────────────────────────────────────────────────────────────
@@ -369,7 +464,7 @@ async def generate_ui(req: PromptRequest):
     print(f"\n{'='*60}\nPROMPT: {req.prompt}\n{'='*60}")
 
     try:
-        # Step 1: Planner
+        # ── Step 1: Planner ──────────────────────────────────
         plan_res = client.chat.completions.create(
             model=MODEL,
             messages=[
@@ -377,12 +472,12 @@ async def generate_ui(req: PromptRequest):
                 {"role": "user",   "content": req.prompt},
             ],
             temperature=0.7,
-            max_tokens= 4000,
+            max_tokens=800,
         )
         plan = plan_res.choices[0].message.content.strip()
         print(f"PLAN ({len(plan)} chars):\n{plan[:300]}\n")
 
-        # Step 2: Generator
+        # ── Step 2: Generator ────────────────────────────────
         gen_res = client.chat.completions.create(
             model=MODEL,
             messages=[
@@ -396,10 +491,13 @@ async def generate_ui(req: PromptRequest):
                         "- Last line:  render(<App />);\n"
                         "- No imports, no export, no markdown fences.\n"
                         "- Hooks: React.useState  React.useEffect  React.useRef\n"
-                        "- No ReactDOM — write render(<App />) once at the end only.\n"
+                        "- No ReactDOM — render(<App />) once at the end only.\n"
                         "- No {/* comment */} as prop values — use real string values.\n"
                         "- Filter inline: const visible = search ? items.filter(...) : items\n"
-                        "- Detail panel is a separate div BELOW the grid."
+                        "- Detail panel is a SEPARATE div BELOW the grid.\n"
+                        "- OUTPUT MUST BE COMPLETE: every { closed }, every ( closed ),\n"
+                        "  every <div> has </div>, every SVG path ends with Z.\n"
+                        "  Do NOT stop generating early. Write until render(<App />); is output."
                     ),
                 },
             ],
@@ -409,13 +507,13 @@ async def generate_ui(req: PromptRequest):
         code = gen_res.choices[0].message.content.strip()
         print(f"GEN attempt 1: {len(code)} chars")
 
-        # Step 3: Validate + Repair loop
+        # ── Step 3: Validate + Repair loop ───────────────────
         for attempt in range(MAX_REPAIR_ATTEMPTS):
             code = pre_clean(code)
             errors = validate_code(code)
 
             if not errors:
-                print(f"PASSED validation on attempt {attempt + 1}")
+                print(f"PASSED on attempt {attempt + 1}")
                 break
 
             print(f"Attempt {attempt + 1} — {len(errors)} error(s):")
@@ -435,9 +533,11 @@ async def generate_ui(req: PromptRequest):
                         "role": "user",
                         "content": (
                             f"Fix these errors in the React component below.\n\n"
-                            f"ERRORS:\n{error_list}\n\n"
+                            f"ERRORS TO FIX:\n{error_list}\n\n"
                             f"BROKEN CODE:\n{code}\n\n"
-                            f"Output the complete fixed code only.\n"
+                            f"Output the COMPLETE fixed component.\n"
+                            f"Every {{ must be closed. Every ( must be closed.\n"
+                            f"Every <div> must have </div>.\n"
                             f"First line: function App() {{\n"
                             f"Last line:  render(<App />);"
                         ),
