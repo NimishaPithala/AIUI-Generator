@@ -27,7 +27,8 @@ client = OpenAI(
 
 # Best free models on NVIDIA build — change if you have credits for larger ones
 PLANNER_MODEL   = "meta/llama-3.3-70b-instruct"
-GENERATOR_MODEL = "meta/llama-3.3-70b-instruct"
+GENERATOR_MODEL = "deepseek-ai/deepseek-v4-pro"
+#"meta/llama-3.3-70b-instruct"
 REPAIR_MODEL    = "meta/llama-3.3-70b-instruct"
 
 MAX_REPAIR_ATTEMPTS = 3
