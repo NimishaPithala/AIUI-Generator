@@ -2,7 +2,7 @@ import re
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from groq import Groq
+from openai import OpenAI
 import os
 
 app = FastAPI()
@@ -15,15 +15,52 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-#MODEL = "llama-3.1-8b-instant"
-#MODEL ="llama-3.3-70b-versatile"
-MODEL = "openai/gpt-oss-120b"
+# ─────────────────────────────────────────────────────────────
+# NVIDIA CLIENT
+# Get your key from https://build.nvidia.com
+# Set env var:  NVIDIA_API_KEY=nvapi-xxxx
+# ─────────────────────────────────────────────────────────────
+client = OpenAI(
+    base_url="https://integrate.api.nvidia.com/v1",
+    api_key=os.environ.get("NVIDIA_API_KEY"),
+)
+
+# Best free models on NVIDIA build — change if you have credits for larger ones
+PLANNER_MODEL   = "meta/llama-3.3-70b-instruct"
+GENERATOR_MODEL = "meta/llama-3.3-70b-instruct"
+REPAIR_MODEL    = "meta/llama-3.3-70b-instruct"
+
 MAX_REPAIR_ATTEMPTS = 3
 
 
 class PromptRequest(BaseModel):
     prompt: str
+
+
+# ─────────────────────────────────────────────────────────────
+# NVIDIA STREAMING HELPER
+# Collects all streamed chunks into one string
+# ─────────────────────────────────────────────────────────────
+def call_model(
+    messages: list,
+    model: str,
+    temperature: float = 0.3,
+    max_tokens: int = 3500,
+) -> str:
+    response = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        temperature=temperature,
+        top_p=0.7,
+        max_tokens=max_tokens,
+        stream=True,
+    )
+    result = ""
+    for chunk in response:
+        delta = chunk.choices[0].delta.content
+        if delta:
+            result += delta
+    return result.strip()
 
 
 # ─────────────────────────────────────────────────────────────
@@ -82,10 +119,10 @@ def pre_clean(code: str) -> str:
 
 # ─────────────────────────────────────────────────────────────
 # STEP 2 — VALIDATE
-# Returns a list of human-readable error strings.
-# Empty list = code is safe to send to the frontend.
+# Returns list of human-readable error strings.
+# Empty list = safe to send to the frontend.
 # ─────────────────────────────────────────────────────────────
-def validate_code(code: str):
+def validate_code(code: str) -> list:
     errors = []
 
     # ── Basic structure ─────────────────────────────────────
@@ -177,7 +214,7 @@ def validate_code(code: str):
         )
 
     # ── JSX tag balance ──────────────────────────────────────
-    # Check structural container tags only (not self-closing elements)
+    # Only check structural container tags (not self-closing SVG/HTML elements)
     structural_tags = [
         "div", "span", "p", "h1", "h2", "h3", "h4", "h5", "h6",
         "ul", "ol", "li", "table", "tr", "td", "th", "thead", "tbody",
@@ -343,7 +380,7 @@ GENERATOR_PROMPT = """You are a React + SVG engineer. Output ONE complete raw JS
 
 16. COMPLETE OUTPUT REQUIREMENT — this is critical:
     Your output MUST be 100% complete.
-    Every {{ must have a matching }}.
+    Every { must have a matching }.
     Every ( must have a matching ).
     Every <div> must have a </div>.
     Every <span> must have a </span>.
@@ -458,7 +495,7 @@ GENERATOR_PROMPT = """You are a React + SVG engineer. Output ONE complete raw JS
 # ─────────────────────────────────────────────────────────────
 @app.get("/")
 def root():
-    return {"status": "ok", "message": "Backend running"}
+    return {"status": "ok", "message": "Backend running — NVIDIA API"}
 
 
 @app.post("/generate-ui")
@@ -467,22 +504,19 @@ async def generate_ui(req: PromptRequest):
 
     try:
         # ── Step 1: Planner ──────────────────────────────────
-        MODEL = "openai/gpt-oss-120b"
-        plan_res = client.chat.completions.create(
-            model=MODEL,
+        plan = call_model(
             messages=[
                 {"role": "system", "content": PLANNER_PROMPT},
                 {"role": "user",   "content": req.prompt},
             ],
+            model=PLANNER_MODEL,
             temperature=0.7,
             max_tokens=800,
         )
-        plan = plan_res.choices[0].message.content.strip()
         print(f"PLAN ({len(plan)} chars):\n{plan[:300]}\n")
 
         # ── Step 2: Generator ────────────────────────────────
-        gen_res = client.chat.completions.create(
-            model=MODEL,
+        code = call_model(
             messages=[
                 {"role": "system", "content": GENERATOR_PROMPT},
                 {
@@ -504,10 +538,10 @@ async def generate_ui(req: PromptRequest):
                     ),
                 },
             ],
+            model=GENERATOR_MODEL,
             temperature=0.3,
             max_tokens=3500,
         )
-        code = gen_res.choices[0].message.content.strip()
         print(f"GEN attempt 1: {len(code)} chars")
 
         # ── Step 3: Validate + Repair loop ───────────────────
@@ -528,8 +562,7 @@ async def generate_ui(req: PromptRequest):
                 break
 
             error_list = "\n".join(f"- {e}" for e in errors)
-            repair_res = client.chat.completions.create(
-                model=MODEL,
+            code = call_model(
                 messages=[
                     {"role": "system", "content": REPAIR_SYSTEM},
                     {
@@ -546,10 +579,10 @@ async def generate_ui(req: PromptRequest):
                         ),
                     },
                 ],
+                model=REPAIR_MODEL,
                 temperature=0.1,
                 max_tokens=3500,
             )
-            code = repair_res.choices[0].message.content.strip()
             print(f"Repair {attempt + 1}: {len(code)} chars")
 
         # Final clean pass
