@@ -179,6 +179,7 @@ PLANNER_PROMPT = """You are an expert educational UI/UX planner.
 
 Analyse the user request and write a precise instruction for a React/SVG engineer
 to build one self-contained interactive educational UI component.
+Give the prompt for Generator prompt to generate component according to the React-Live Library.
 
 COMPONENT TYPE — pick the best fit:
   CARD GRID   : facts, lists, comparisons (planets, elements, countries, states)
