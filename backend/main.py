@@ -351,6 +351,8 @@ SVG DIAGRAM PATTERN:
   </svg>
 
 START output with: function App() {
+Do not give incomplete tags. Make sure all the tags are complete in the generated code.
+Generate the entire code to complete the tags. If required, minify the code.
 END   output with: render(<App />);"""
 
 
