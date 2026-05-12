@@ -30,7 +30,7 @@ client = OpenAI(
 PLANNER_MODEL   = "meta/llama-3.3-70b-instruct"
 GENERATOR_MODEL = "deepseek-ai/deepseek-v4-pro"
 #"meta/llama-3.3-70b-instruct"
-REPAIR_MODEL    = "deepseek-ai/deepseek-v4-pro"
+REPAIR_MODEL    = "meta/llama-3.1-8b-instruct"
 
 MAX_REPAIR_ATTEMPTS = 1
 
@@ -47,7 +47,8 @@ def call_model(
     messages: list,
     model: str,
     temperature: float = 0.3,
-    max_tokens: int = 3500,
+    max_tokens: int = 1200, 
+    #3500,
 ) -> str:
     response = client.chat.completions.create(
         model=model,
