@@ -502,7 +502,7 @@ def root():
     return {"status": "ok", "message": "Backend running — NVIDIA API"}
 
 
-"""@app.post("/generate-ui")
+@app.post("/generate-ui")
 async def generate_ui(req: PromptRequest):
     start_total = time.time()
 
@@ -565,41 +565,3 @@ async def generate_ui(req: PromptRequest):
     except Exception as e:
         print(f"ERROR: {e}")
         return {"error": str(e)}
-"""
-from fastapi.responses import StreamingResponse
-
-@app.post("/generate-ui")
-async def generate_ui(req: PromptRequest):
-
-    async def stream_generator():
-
-        response = client.chat.completions.create(
-            model="qwen/qwen2.5-coder-7b-instruct",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a React UI generator. "
-                        "Return only valid JSX code."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": req.prompt,
-                },
-            ],
-            temperature=0.3,
-            max_tokens=1200,
-            stream=True,
-        )
-
-        for chunk in response:
-            delta = chunk.choices[0].delta.content
-
-            if delta:
-                yield delta
-
-    return StreamingResponse(
-        stream_generator(),
-        media_type="text/plain",
-    )
