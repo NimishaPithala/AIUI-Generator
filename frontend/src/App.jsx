@@ -301,6 +301,7 @@ export default function App() {
     return () => clearInterval(id);
   }, [loading]);
 
+  {/*
   const generate = async () => {
     if (!prompt.trim() || loading) return;
     setLoading(true);
@@ -332,7 +333,56 @@ export default function App() {
       }
     }
     setLoading(false);
-  };
+  }; */}
+
+  const generate = async () => {
+  if (!prompt.trim() || loading) return;
+
+  setLoading(true);
+  setError("");
+  setGeneratedCode("");
+
+  try {
+    const response = await fetch(
+      "https://aiui-generator.onrender.com/generate-ui",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ prompt }),
+      }
+    );
+
+    if (!response.body) {
+      throw new Error("No response body");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+
+    let fullText = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) break;
+
+      const chunk = decoder.decode(value);
+
+      fullText += chunk;
+
+      // LIVE update UI
+      setGeneratedCode(fullText);
+    }
+
+  } catch (e) {
+    console.error(e);
+    setError(`Streaming failed: ${e.message}`);
+  }
+
+  setLoading(false);
+};
 
   return (
     <div
