@@ -29,10 +29,11 @@ client = OpenAI(
 # Best free models on NVIDIA build — change if you have credits for larger ones
 PLANNER_MODEL   = "meta/llama-3.3-70b-instruct"
 GENERATOR_MODEL = "deepseek-ai/deepseek-v4-pro"
+#GENERATOR_MODEL = "qwen/qwen2.5-coder-7b-instruct"
 #"meta/llama-3.3-70b-instruct"
 REPAIR_MODEL    = "meta/llama-3.1-8b-instruct"
 
-MAX_REPAIR_ATTEMPTS = 1
+MAX_REPAIR_ATTEMPTS =0
 
 
 class PromptRequest(BaseModel):
