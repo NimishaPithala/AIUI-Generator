@@ -501,96 +501,63 @@ def root():
 
 @app.post("/generate-ui")
 async def generate_ui(req: PromptRequest):
-    print(f"\n{'='*60}\nPROMPT: {req.prompt}\n{'='*60}")
+    start_total = time.time()
+
+    print(f"\n{'='*60}")
+    print(f"PROMPT: {req.prompt}")
+    print(f"{'='*60}")
 
     try:
-        # ── Step 1: Planner ──────────────────────────────────
+        # STEP 1
+        t1 = time.time()
+
+        print("Starting planner...")
+
         plan = call_model(
             messages=[
                 {"role": "system", "content": PLANNER_PROMPT},
-                {"role": "user",   "content": req.prompt},
+                {"role": "user", "content": req.prompt},
             ],
             model=PLANNER_MODEL,
             temperature=0.7,
             max_tokens=800,
         )
-        print(f"PLAN ({len(plan)} chars):\n{plan[:300]}\n")
 
-        # ── Step 2: Generator ────────────────────────────────
+        print(f"Planner completed in {time.time() - t1:.2f}s")
+
+        # STEP 2
+        t2 = time.time()
+
+        print("Starting generator...")
+
         code = call_model(
             messages=[
                 {"role": "system", "content": GENERATOR_PROMPT},
-                {
-                    "role": "user",
-                    "content": (
-                        f"{plan}\n\n"
-                        "CRITICAL REMINDERS:\n"
-                        "- First line: function App() {\n"
-                        "- Last line:  render(<App />);\n"
-                        "- No imports, no export, no markdown fences.\n"
-                        "- Hooks: React.useState  React.useEffect  React.useRef\n"
-                        "- No ReactDOM — render(<App />) once at the end only.\n"
-                        "- No {/* comment */} as prop values — use real string values.\n"
-                        "- Filter inline: const visible = search ? items.filter(...) : items\n"
-                        "- Detail panel is a SEPARATE div BELOW the grid.\n"
-                        "- OUTPUT MUST BE COMPLETE: every { closed }, every ( closed ),\n"
-                        "  every <div> has </div>, every SVG path ends with Z.\n"
-                        "  Do NOT stop generating early. Write until render(<App />); is output."
-                    ),
-                },
+                {"role": "user", "content": plan},
             ],
             model=GENERATOR_MODEL,
             temperature=0.3,
-            max_tokens=3500,
+            max_tokens=1200,
         )
-        print(f"GEN attempt 1: {len(code)} chars")
 
-        # ── Step 3: Validate + Repair loop ───────────────────
-        for attempt in range(MAX_REPAIR_ATTEMPTS):
-            code = pre_clean(code)
-            errors = validate_code(code)
+        print(f"Generator completed in {time.time() - t2:.2f}s")
 
-            if not errors:
-                print(f"PASSED on attempt {attempt + 1}")
-                break
+        # STEP 3
+        t3 = time.time()
 
-            print(f"Attempt {attempt + 1} — {len(errors)} error(s):")
-            for e in errors:
-                print(f"  * {e}")
-
-            if attempt == MAX_REPAIR_ATTEMPTS - 1:
-                print("Max repair attempts reached — sending best-effort code")
-                break
-
-            error_list = "\n".join(f"- {e}" for e in errors)
-            code = call_model(
-                messages=[
-                    {"role": "system", "content": REPAIR_SYSTEM},
-                    {
-                        "role": "user",
-                        "content": (
-                            f"Fix these errors in the React component below.\n\n"
-                            f"ERRORS TO FIX:\n{error_list}\n\n"
-                            f"BROKEN CODE:\n{code}\n\n"
-                            f"Output the COMPLETE fixed component.\n"
-                            f"Every {{ must be closed. Every ( must be closed.\n"
-                            f"Every <div> must have </div>.\n"
-                            f"First line: function App() {{\n"
-                            f"Last line:  render(<App />);"
-                        ),
-                    },
-                ],
-                model=REPAIR_MODEL,
-                temperature=0.1,
-                max_tokens=3500,
-            )
-            print(f"Repair {attempt + 1}: {len(code)} chars")
-
-        # Final clean pass
         code = pre_clean(code)
-        print(f"FINAL: {len(code)} chars\n{code[:200]}")
+        errors = validate_code(code)
 
-        return {"planner_instruction": plan, "generated_code": code}
+        print(f"Validation completed in {time.time() - t3:.2f}s")
+        print(f"Errors found: {len(errors)}")
+
+        print(f"TOTAL TIME: {time.time() - start_total:.2f}s")
+
+        return {
+            "planner_instruction": plan,
+            "generated_code": code,
+            "errors": errors
+        }
 
     except Exception as e:
         print(f"ERROR: {e}")
