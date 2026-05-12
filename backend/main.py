@@ -2,9 +2,8 @@ import re
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from openai import OpenAI
+from groq import Groq
 import os
-import time
 
 app = FastAPI()
 
@@ -16,55 +15,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─────────────────────────────────────────────────────────────
-# NVIDIA CLIENT
-# Get your key from https://build.nvidia.com
-# Set env var:  NVIDIA_API_KEY=nvapi-xxxx
-# ─────────────────────────────────────────────────────────────
-client = OpenAI(
-    base_url="https://integrate.api.nvidia.com/v1",
-    api_key=os.environ.get("NVIDIA_API_KEY"),
-)
-
-# Best free models on NVIDIA build — change if you have credits for larger ones
-PLANNER_MODEL   = "meta/llama-3.3-70b-instruct"
-GENERATOR_MODEL = "deepseek-ai/deepseek-v4-pro"
-#GENERATOR_MODEL = "qwen/qwen2.5-coder-7b-instruct"
-#"meta/llama-3.3-70b-instruct"
-REPAIR_MODEL    = "meta/llama-3.1-8b-instruct"
-
-MAX_REPAIR_ATTEMPTS =0
+client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+#MODEL = "llama-3.1-8b-instant"
+#MODEL ="llama-3.3-70b-versatile"
+MODEL = "openai/gpt-oss-120b"
+MAX_REPAIR_ATTEMPTS = 3
 
 
 class PromptRequest(BaseModel):
     prompt: str
-
-
-# ─────────────────────────────────────────────────────────────
-# NVIDIA STREAMING HELPER
-# Collects all streamed chunks into one string
-# ─────────────────────────────────────────────────────────────
-def call_model(
-    messages: list,
-    model: str,
-    temperature: float = 0.3,
-    max_tokens: int = 1200, 
-    #3500,
-) -> str:
-    response = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        temperature=temperature,
-        top_p=0.7,
-        max_tokens=max_tokens,
-        stream=True,
-    )
-    result = ""
-    for chunk in response:
-        delta = chunk.choices[0].delta.content
-        if delta:
-            result += delta
-    return result.strip()
 
 
 # ─────────────────────────────────────────────────────────────
@@ -123,10 +82,10 @@ def pre_clean(code: str) -> str:
 
 # ─────────────────────────────────────────────────────────────
 # STEP 2 — VALIDATE
-# Returns list of human-readable error strings.
-# Empty list = safe to send to the frontend.
+# Returns a list of human-readable error strings.
+# Empty list = code is safe to send to the frontend.
 # ─────────────────────────────────────────────────────────────
-def validate_code(code: str) -> list:
+def validate_code(code: str):
     errors = []
 
     # ── Basic structure ─────────────────────────────────────
@@ -218,7 +177,7 @@ def validate_code(code: str) -> list:
         )
 
     # ── JSX tag balance ──────────────────────────────────────
-    # Only check structural container tags (not self-closing SVG/HTML elements)
+    # Check structural container tags only (not self-closing elements)
     structural_tags = [
         "div", "span", "p", "h1", "h2", "h3", "h4", "h5", "h6",
         "ul", "ol", "li", "table", "tr", "td", "th", "thead", "tbody",
@@ -384,7 +343,7 @@ GENERATOR_PROMPT = """You are a React + SVG engineer. Output ONE complete raw JS
 
 16. COMPLETE OUTPUT REQUIREMENT — this is critical:
     Your output MUST be 100% complete.
-    Every { must have a matching }.
+    Every {{ must have a matching }}.
     Every ( must have a matching ).
     Every <div> must have a </div>.
     Every <span> must have a </span>.
@@ -499,69 +458,108 @@ GENERATOR_PROMPT = """You are a React + SVG engineer. Output ONE complete raw JS
 # ─────────────────────────────────────────────────────────────
 @app.get("/")
 def root():
-    return {"status": "ok", "message": "Backend running — NVIDIA API"}
+    return {"status": "ok", "message": "Backend running"}
 
 
 @app.post("/generate-ui")
 async def generate_ui(req: PromptRequest):
-    start_total = time.time()
-
-    print(f"\n{'='*60}")
-    print(f"PROMPT: {req.prompt}")
-    print(f"{'='*60}")
+    print(f"\n{'='*60}\nPROMPT: {req.prompt}\n{'='*60}")
 
     try:
-        # STEP 1
-        t1 = time.time()
-
-        print("Starting planner...")
-
-        plan = call_model(
+        # ── Step 1: Planner ──────────────────────────────────
+        MODEL = "openai/gpt-oss-120b"
+        plan_res = client.chat.completions.create(
+            model=MODEL,
             messages=[
                 {"role": "system", "content": PLANNER_PROMPT},
-                {"role": "user", "content": req.prompt},
+                {"role": "user",   "content": req.prompt},
             ],
-            model=PLANNER_MODEL,
             temperature=0.7,
             max_tokens=800,
         )
+        plan = plan_res.choices[0].message.content.strip()
+        print(f"PLAN ({len(plan)} chars):\n{plan[:300]}\n")
 
-        print(f"Planner completed in {time.time() - t1:.2f}s")
-
-        # STEP 2
-        t2 = time.time()
-
-        print("Starting generator...")
-
-        code = call_model(
+        # ── Step 2: Generator ────────────────────────────────
+        gen_res = client.chat.completions.create(
+            model=MODEL,
             messages=[
                 {"role": "system", "content": GENERATOR_PROMPT},
-                {"role": "user", "content": plan},
+                {
+                    "role": "user",
+                    "content": (
+                        f"{plan}\n\n"
+                        "CRITICAL REMINDERS:\n"
+                        "- First line: function App() {\n"
+                        "- Last line:  render(<App />);\n"
+                        "- No imports, no export, no markdown fences.\n"
+                        "- Hooks: React.useState  React.useEffect  React.useRef\n"
+                        "- No ReactDOM — render(<App />) once at the end only.\n"
+                        "- No {/* comment */} as prop values — use real string values.\n"
+                        "- Filter inline: const visible = search ? items.filter(...) : items\n"
+                        "- Detail panel is a SEPARATE div BELOW the grid.\n"
+                        "- OUTPUT MUST BE COMPLETE: every { closed }, every ( closed ),\n"
+                        "  every <div> has </div>, every SVG path ends with Z.\n"
+                        "  Do NOT stop generating early. Write until render(<App />); is output."
+                    ),
+                },
             ],
-            model=GENERATOR_MODEL,
             temperature=0.3,
-            max_tokens=1200,
+            max_tokens=3500,
         )
+        code = gen_res.choices[0].message.content.strip()
+        print(f"GEN attempt 1: {len(code)} chars")
 
-        print(f"Generator completed in {time.time() - t2:.2f}s")
+        # ── Step 3: Validate + Repair loop ───────────────────
+        for attempt in range(MAX_REPAIR_ATTEMPTS):
+            code = pre_clean(code)
+            errors = validate_code(code)
 
-        # STEP 3
-        t3 = time.time()
+            if not errors:
+                print(f"PASSED on attempt {attempt + 1}")
+                break
 
+            print(f"Attempt {attempt + 1} — {len(errors)} error(s):")
+            for e in errors:
+                print(f"  * {e}")
+
+            if attempt == MAX_REPAIR_ATTEMPTS - 1:
+                print("Max repair attempts reached — sending best-effort code")
+                break
+
+            error_list = "\n".join(f"- {e}" for e in errors)
+            repair_res = client.chat.completions.create(
+                model=MODEL,
+                messages=[
+                    {"role": "system", "content": REPAIR_SYSTEM},
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Fix these errors in the React component below.\n\n"
+                            f"ERRORS TO FIX:\n{error_list}\n\n"
+                            f"BROKEN CODE:\n{code}\n\n"
+                            f"Output the COMPLETE fixed component.\n"
+                            f"Every {{ must be closed. Every ( must be closed.\n"
+                            f"Every <div> must have </div>.\n"
+                            f"First line: function App() {{\n"
+                            f"Last line:  render(<App />);"
+                        ),
+                    },
+                ],
+                temperature=0.1,
+                max_tokens=3500,
+            )
+            code = repair_res.choices[0].message.content.strip()
+            print(f"Repair {attempt + 1}: {len(code)} chars")
+
+        # Final clean pass
         code = pre_clean(code)
-        errors = validate_code(code)
+        print(f"FINAL: {len(code)} chars\n{code[:200]}")
 
-        print(f"Validation completed in {time.time() - t3:.2f}s")
-        print(f"Errors found: {len(errors)}")
-
-        print(f"TOTAL TIME: {time.time() - start_total:.2f}s")
-
-        return {
-            "planner_instruction": plan,
-            "generated_code": code,
-            "errors": errors
-        }
+        return {"planner_instruction": plan, "generated_code": code}
 
     except Exception as e:
         print(f"ERROR: {e}")
         return {"error": str(e)}
+
+
