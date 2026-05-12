@@ -28,10 +28,10 @@ client = OpenAI(
     api_key=os.environ.get("NVIDIA_API_KEY"),
 )
 
-GENERATOR_MODEL = "deepseek-ai/deepseek-r1"
-REPAIR_MODEL    = "deepseek-ai/deepseek-r1"
+GENERATOR_MODEL = "deepseek-ai/deepseek-v4-flash"
+REPAIR_MODEL    = "deepseek-ai/deepseek-v4-flash"
 
-MAX_REPAIR_ATTEMPTS = 3
+MAX_REPAIR_ATTEMPTS = 0
 
 
 class PromptRequest(BaseModel):
