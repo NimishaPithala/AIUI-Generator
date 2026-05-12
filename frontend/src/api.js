@@ -4,7 +4,7 @@ import axios from "axios";
 const API = axios.create({
   baseURL: "https://aiui-generator.onrender.com",
   headers: { "Content-Type": "application/json" },
-  timeout: 300000, // 5 mins for deepseek to render to frontend
+  timeout: 900000, // for deepseek to render to frontend
 });
 
 export default API;
